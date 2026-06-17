@@ -21,6 +21,7 @@ export default function LoginPage() {
       alert(error.message);
       return;
     }
+    window.location.href = "/projects";
 
     alert("Login successful");
   };
