@@ -43,31 +43,88 @@ setLoading(false);
 
 };
 
+
+
+
 const deleteProject = async (
-id: string,
-name: string
+  id: string,
+  name: string
 ) => {
-const confirmed = window.confirm(
-`Are you sure you want to delete "${name}"?`
-);
+  const confirmed = window.confirm(
+    `Are you sure you want to delete "${name}"?`
+  );
 
+  if (!confirmed) return;
 
-if (!confirmed) return;
+  try {
+    // Get all files belonging to project
 
-const { error } = await supabase
-  .from("projects")
-  .delete()
-  .eq("id", id);
+    const { data: files, error: filesError } =
+      await supabase
+        .from("project_files")
+        .select("*")
+        .eq("project_id", id);
 
-if (error) {
-  alert(error.message);
-  return;
-}
+    if (filesError) {
+      alert(filesError.message);
+      return;
+    }
 
-loadProjects();
+    // Delete files from storage
 
+    if (files && files.length > 0) {
+      const filePaths = files.map(
+        (file) => file.file_path
+      );
 
+      const { error: storageError } =
+        await supabase.storage
+          .from("project-files")
+          .remove(filePaths);
+
+      if (storageError) {
+        alert(storageError.message);
+        return;
+      }
+    }
+
+    // Delete file references
+
+    const { error: projectFilesError } =
+      await supabase
+        .from("project_files")
+        .delete()
+        .eq("project_id", id);
+
+    if (projectFilesError) {
+      alert(projectFilesError.message);
+      return;
+    }
+
+    // Delete project
+
+    const { error: projectError } =
+      await supabase
+        .from("projects")
+        .delete()
+        .eq("id", id);
+
+    if (projectError) {
+      alert(projectError.message);
+      return;
+    }
+
+    loadProjects();
+
+  } catch (err) {
+    console.error(err);
+    alert("Delete failed");
+  }
 };
+
+
+
+
 
 return ( <div className="min-h-screen bg-[#0A0A0A] text-white"> <div className="border-b border-[#1F2937] px-8 py-6"> <h1 className="heading-brand text-xl font-bold"> <span className="text-white">NOKASHI</span> <span className="text-[#00B7FF]"> STUDIOS</span> </h1> </div>
 
@@ -146,12 +203,15 @@ return ( <div className="min-h-screen bg-[#0A0A0A] text-white"> <div className="
               </div>
 
               <button
-                className={`mt-6 w-full py-2 rounded-lg font-semibold ${
+                onClick={() =>
+                router.push(`/projects/${project.id}`)
+                 }
+                 className={`mt-6 w-full py-2 rounded-lg font-semibold ${
                   isAI
-                    ? "bg-[#00B7FF] text-black"
-                    : "bg-[#14D8C4] text-black"
-                }`}
-              >
+                 ? "bg-[#00B7FF] text-black"
+                  : "bg-[#14D8C4] text-black"
+                    }`}
+                >
                 Open Project
               </button>
             </div>

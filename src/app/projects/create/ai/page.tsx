@@ -50,7 +50,11 @@ export default function AIProjectPage() {
       return [];
     }
 
-    uploadedFiles.push(data.path);
+    uploadedFiles.push({
+      file_name: file.name,
+      file_path: data.path,
+      file_type: file.type,
+    });
   }
 
   setUploading(false);
@@ -79,17 +83,16 @@ if (files.length === 0) {
 
 
   try {
-    alert("STEP 1");
+    
 
     const {
       data: { user },
       error: userError,
     } = await supabase.auth.getUser();
 
-    console.log("USER:", user);
-    console.log("USER ERROR:", userError);
+    
 
-    alert("STEP 2");
+    
 
     if (!user) {
       alert("No user found");
@@ -99,7 +102,7 @@ if (files.length === 0) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    alert("STEP 3");
+    
 
 
     const uploadedFiles = await uploadFiles();
@@ -123,17 +126,36 @@ if (uploadedFiles.length === 0) {
       })
       .select();
 
-    console.log("DATA:", data);
-    console.log("ERROR:", error);
+    
 
     if (error) {
-      alert(error.message);
-      return;
-    }
+  alert(error.message);
+  return;
+}
 
-    alert("PROJECT CREATED");
+const projectId = data[0].id;
 
-    router.push(`/projects/${data[0].id}`);
+const fileRows = uploadedFiles.map((file) => ({
+  project_id: projectId,
+  user_id: user.id,
+  file_name: file.file_name,
+  file_path: file.file_path,
+  file_type: file.file_type,
+}));
+
+const { error: fileError } = await supabase
+  .from("project_files")
+  .insert(fileRows);
+
+if (fileError) {
+  console.error(fileError);
+  alert(fileError.message);
+  return;
+}
+
+alert("PROJECT CREATED");
+
+router.push(`/projects/${projectId}`);
   } catch (err) {
     console.error(err);
     alert("CHECK CONSOLE");
