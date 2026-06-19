@@ -16,6 +16,7 @@ return ( <div className="min-h-screen bg-[#0A0A0A] text-white">
 
     <div className="flex items-center gap-4">
       <button
+        onClick={() => router.push("/projects/list")}
         className="px-5 py-2 rounded-lg bg-[#00B7FF] text-black font-semibold hover:opacity-90 transition"
       >
         My Projects
@@ -81,7 +82,5 @@ return ( <div className="min-h-screen bg-[#0A0A0A] text-white">
     </div>
   </div>
 </div>
-
-
 );
 }
