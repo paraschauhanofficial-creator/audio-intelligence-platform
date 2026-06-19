@@ -1,11 +1,14 @@
 "use client";
 
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 export default function ProjectsPage() {
+const router = useRouter();
+
 const handleLogout = async () => {
 await supabase.auth.signOut();
-window.location.href = "/";
+router.push("/");
 };
 
 return ( <div className="min-h-screen bg-[#0A0A0A] text-white">
@@ -15,7 +18,7 @@ return ( <div className="min-h-screen bg-[#0A0A0A] text-white">
       <button
         className="px-5 py-2 rounded-lg bg-[#00B7FF] text-black font-semibold hover:opacity-90 transition"
       >
-        + New Project
+        My Projects
       </button>
 
       <button
@@ -37,9 +40,11 @@ return ( <div className="min-h-screen bg-[#0A0A0A] text-white">
       Choose how you want to create today.
     </p>
 
-    {/* Workflow Cards */}
     <div className="grid md:grid-cols-3 gap-6">
-      <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-8 hover:border-[#00B7FF] hover:shadow-[0_0_30px_rgba(0,183,255,0.15)] transition cursor-pointer">
+      <div
+        onClick={() => router.push("/projects/create/ai")}
+        className="bg-[#111827] border border-[#1F2937] rounded-2xl p-8 hover:border-[#00B7FF] hover:shadow-[0_0_30px_rgba(0,183,255,0.15)] transition cursor-pointer"
+      >
         <h3 className="text-2xl font-bold text-[#00B7FF] mb-4">
           You Handle It
         </h3>
@@ -50,7 +55,10 @@ return ( <div className="min-h-screen bg-[#0A0A0A] text-white">
         </p>
       </div>
 
-      <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-8 hover:border-[#14D8C4] hover:shadow-[0_0_30px_rgba(20,216,196,0.15)] transition cursor-pointer">
+      <div
+        onClick={() => router.push("/projects/create/producer")}
+        className="bg-[#111827] border border-[#1F2937] rounded-2xl p-8 hover:border-[#14D8C4] hover:shadow-[0_0_30px_rgba(20,216,196,0.15)] transition cursor-pointer"
+      >
         <h3 className="text-2xl font-bold text-[#14D8C4] mb-4">
           Take Control
         </h3>
@@ -70,8 +78,10 @@ return ( <div className="min-h-screen bg-[#0A0A0A] text-white">
           Coming Soon
         </p>
       </div>
-            </div>
-      </div>
     </div>
-  );
+  </div>
+</div>
+
+
+);
 }
