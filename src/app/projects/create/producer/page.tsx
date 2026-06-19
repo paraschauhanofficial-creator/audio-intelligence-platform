@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 export default function ProducerProjectPage() {
   const router = useRouter();
@@ -11,8 +12,37 @@ export default function ProducerProjectPage() {
   const [creativeDirection, setCreativeDirection] = useState("");
 
   const handleCreateProject = async () => {
-    alert("Producer project creation coming next step");
-  };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    alert("Please login first");
+    return;
+  }
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+
+  const { error } = await supabase
+    .from("projects")
+    .insert({
+      user_id: user.id,
+      name: projectName,
+      workflow: "producer_mode",
+      genre,
+      project_prompt: creativeDirection,
+      status: "ready_for_upload",
+      expires_at: expiresAt.toISOString(),
+    });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  router.push("/projects/list");
+};
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white">

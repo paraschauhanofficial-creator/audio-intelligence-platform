@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 export default function AIProjectPage() {
   const router = useRouter();
@@ -10,9 +11,139 @@ export default function AIProjectPage() {
   const [genre, setGenre] = useState("");
   const [creativeDirection, setCreativeDirection] = useState("");
 
+
+  const [audioType, setAudioType] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadComplete, setUploadComplete] = useState(false); 
+
+
+
+
+
+
+  const uploadFiles = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    alert("Please login first");
+    return [];
+  }
+
+  setUploading(true);
+
+  const uploadedFiles = [];
+
+  for (const file of files) {
+    const filePath = `${user.id}/${Date.now()}-${file.name}`;
+
+    const { data, error } = await supabase.storage
+      .from("project-files")
+      .upload(filePath, file);
+
+    if (error) {
+      alert(error.message);
+      setUploading(false);
+      return [];
+    }
+
+    uploadedFiles.push(data.path);
+  }
+
+  setUploading(false);
+  setUploadComplete(true);
+
+  return uploadedFiles;
+};
+
+
+
+
+
   const handleCreateProject = async () => {
-    alert("Project creation coming next step");
-  };
+
+
+if (!audioType) {
+  alert("Please select Mix or Stems");
+  return;
+}
+
+if (files.length === 0) {
+  alert("Please select files");
+  return;
+}
+
+
+
+  try {
+    alert("STEP 1");
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    console.log("USER:", user);
+    console.log("USER ERROR:", userError);
+
+    alert("STEP 2");
+
+    if (!user) {
+      alert("No user found");
+      return;
+    }
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    alert("STEP 3");
+
+
+    const uploadedFiles = await uploadFiles();
+
+if (uploadedFiles.length === 0) {
+  return;
+}
+
+
+
+    const { data, error } = await supabase
+      .from("projects")
+      .insert({
+        user_id: user.id,
+        name: projectName,
+        workflow: "ai_assisted",
+        genre,
+        project_prompt: creativeDirection,
+        status: "ready_for_upload",
+        expires_at: expiresAt.toISOString(),
+      })
+      .select();
+
+    console.log("DATA:", data);
+    console.log("ERROR:", error);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    alert("PROJECT CREATED");
+
+    router.push("/projects/list");
+  } catch (err) {
+    console.error(err);
+    alert("CHECK CONSOLE");
+  }
+};
+
+
+
+
+
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white">
@@ -89,14 +220,76 @@ export default function AIProjectPage() {
             />
           </div>
 
-          {/* Future Feature */}
-          <div className="border border-dashed border-[#1F2937] rounded-xl p-4 text-zinc-500">
-            Reference Track Upload
-            <br />
-            <span className="text-sm">
-              Coming Soon
-            </span>
-          </div>
+        
+
+
+
+
+          <div>
+  <label className="block mb-3 text-sm text-zinc-400">
+    Audio Upload
+  </label>
+
+  <div className="flex gap-6 mb-4">
+    <label className="flex items-center gap-2">
+      <input
+        type="radio"
+        value="mix"
+        checked={audioType === "mix"}
+        onChange={(e) => setAudioType(e.target.value)}
+      />
+      Final Mix
+    </label>
+
+    <label className="flex items-center gap-2">
+      <input
+        type="radio"
+        value="stems"
+        checked={audioType === "stems"}
+        onChange={(e) => setAudioType(e.target.value)}
+      />
+      Stems
+    </label>
+  </div>
+
+  <input
+    type="file"
+    multiple
+    accept=".wav,.mp3,.flac,.aiff,.zip"
+    onChange={(e) =>
+      setFiles(
+        e.target.files
+          ? Array.from(e.target.files)
+          : []
+      )
+    }
+    className="w-full bg-[#111827] border border-[#1F2937] rounded-xl p-4"
+  />
+
+  {files.length > 0 && (
+    <div className="mt-3 text-green-400">
+      ✓ {files.length} file(s) selected
+    </div>
+  )}
+
+  {uploading && (
+  <div className="mt-2 text-[#00B7FF]">
+    Uploading files...
+  </div>
+)}
+
+{uploadComplete && (
+  <div className="mt-2 text-green-400">
+    ✓ Upload Complete
+  </div>
+)}
+
+
+</div>
+
+
+
+
 
           {/* Buttons */}
           <div className="flex gap-4">
