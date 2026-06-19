@@ -133,7 +133,7 @@ if (uploadedFiles.length === 0) {
 
     alert("PROJECT CREATED");
 
-    router.push("/projects/list");
+    router.push(`/projects/${data[0].id}`);
   } catch (err) {
     console.error(err);
     alert("CHECK CONSOLE");
