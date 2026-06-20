@@ -277,7 +277,7 @@ wavesurferRef.current.on("timeupdate", () => {
 
         {/* Project Header */}
 
-        <div className="flex flex-col lg:flex-row justify-between gap-6 mb-8">
+        <div className="flex flex-col lg:flex-row justify-between items-start gap-6 mb-8">
 
   <div>
     <h2 className="text-4xl font-bold">
@@ -289,9 +289,84 @@ wavesurferRef.current.on("timeupdate", () => {
     </p>
   </div>
 
-  <div className="grid grid-cols-3 gap-3 w-full lg:w-auto lg:w-[420px]">
 
-    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-2">
+
+<div className="
+bg-[#111827]
+border border-[#1F2937]
+rounded-xl
+px-5 py-2
+w-full
+max-w-[320px]
+">
+
+  <div className="grid grid-cols-3 gap-4 text-center">
+
+    <div>
+      <p className="text-[10px] text-zinc-500 uppercase">
+        Tempo
+      </p>
+
+      <p className="text-xl font-semibold text-[#00B7FF]">
+        {project.tempo || "--"}
+      </p>
+    </div>
+
+    <div>
+      <p className="text-[10px] text-zinc-500 uppercase">
+        Key
+      </p>
+
+      <p className="text-xl font-semibold text-[#00B7FF]">
+        {project.musical_key || "--"}
+      </p>
+    </div>
+
+    <div>
+      <p className="text-[10px] text-zinc-500 uppercase">
+        Scale
+      </p>
+
+      <p className="text-xl font-semibold text-[#00B7FF]">
+        {project.scale || "--"}
+      </p>
+    </div>
+
+  </div>
+
+
+
+  <div className="mt-3 pt-2 border-t border-[#1F2937]">
+
+    <div className="flex items-center justify-center gap-3 text-[9.5px] text-zinc-500">
+
+  <span>
+    {project.sample_rate
+      ? `${project.sample_rate / 1000} kHz`
+      : "--"}
+  </span>
+
+  <span>•</span>
+
+  <span>
+    {project.bitrate
+      ? `${Math.round(project.bitrate / 1000)} kbps`
+      : "--"}
+  </span>
+
+</div>
+
+  </div>
+
+</div>
+
+
+
+
+
+  <div className="grid grid-cols-3 gap-3 w-full lg:w-[420px]">
+
+    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-5 py-3">
       <p className="text-xs text-zinc-400">
         Files
       </p>
@@ -301,7 +376,7 @@ wavesurferRef.current.on("timeupdate", () => {
       </p>
     </div>
 
-    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-2">
+    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-5 py-3">
       <p className="text-xs text-zinc-400">
         Days Left
       </p>
@@ -311,7 +386,7 @@ wavesurferRef.current.on("timeupdate", () => {
       </p>
     </div>
 
-    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-2">
+    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-5 py-3">
       <p className="text-xs text-zinc-400">
         Workflow
       </p>
