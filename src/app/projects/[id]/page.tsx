@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import WaveSurfer from "wavesurfer.js";
+import { Music2 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
@@ -12,10 +14,119 @@ export default function ProjectPage() {
   const [project, setProject] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
   const [daysRemaining, setDaysRemaining] = useState(0);
+  const waveformRef = useRef<HTMLDivElement>(null);
+  const wavesurferRef = useRef<any>(null);
+  const [currentTime, setCurrentTime] = useState("0:00");
+  const [duration, setDuration] = useState("0:00");
+  const [uploadedPreviewUrl, setUploadedPreviewUrl] =
+  useState("");
+
+  const [uploadedPreviewName, setUploadedPreviewName] =
+  useState("");
 
   useEffect(() => {
     loadProject();
   }, []);
+
+  
+
+
+  useEffect(() => {
+  if (
+    project?.audio_type !== "mix" ||
+    files.length === 0 ||
+    !waveformRef.current
+  ) {
+    return;
+  }
+
+
+
+
+
+  loadWaveform();
+
+  return () => {
+    if (wavesurferRef.current) {
+      wavesurferRef.current.destroy();
+    }
+  };
+}, [files, project]);
+
+
+
+
+  const formatTime = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+
+  return `${mins}:${secs
+    .toString()
+    .padStart(2, "0")}`;
+};
+
+
+
+const loadWaveform = async () => {
+  try {
+    const file = files[0];
+
+    const { data, error } =
+      await supabase.storage
+        .from("project-files")
+        .createSignedUrl(
+          file.file_path,
+          3600
+        );
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    if (wavesurferRef.current) {
+      wavesurferRef.current.destroy();
+    }
+
+    wavesurferRef.current = WaveSurfer.create({
+      container: waveformRef.current!,
+      waveColor: "#1F2937",
+      progressColor: "#00B7FF",
+      cursorColor: "#00B7FF",
+      height: 80,
+      barWidth: 2,
+      barGap: 1,
+    });
+
+    wavesurferRef.current.on("ready", () => {
+  setDuration(
+    formatTime(
+      wavesurferRef.current.getDuration()
+    )
+  );
+});
+
+wavesurferRef.current.on("timeupdate", () => {
+  setCurrentTime(
+    formatTime(
+      wavesurferRef.current.getCurrentTime()
+    )
+  );
+});
+
+
+
+    wavesurferRef.current.load(
+      data.signedUrl
+    );
+
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+
+
 
   const loadProject = async () => {
     const { data, error } = await supabase
@@ -58,7 +169,39 @@ export default function ProjectPage() {
     }
 
     setFiles(projectFiles || []);
+    console.log(projectFiles);
   };
+
+
+
+  const previewUploadedFile = async (
+  filePath: string,
+  fileName: string
+) => {
+  const { data, error } =
+    await supabase.storage
+      .from("project-files")
+      .createSignedUrl(
+        filePath,
+        3600
+      );
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  setUploadedPreviewUrl(
+    data.signedUrl
+  );
+
+  setUploadedPreviewName(
+    fileName
+  );
+};
+
+
+
 
   if (!project) {
     return (
@@ -238,7 +381,7 @@ export default function ProjectPage() {
       Uploaded Files
     </h3>
 
-    <div className="max-h-[280px] overflow-y-auto space-y-3">
+    <div className="max-h-[350px] overflow-y-auto space-y-3">
 
       {files.map((file) => (
         <div
@@ -250,14 +393,50 @@ export default function ProjectPage() {
           </p>
 
           <button
-            className="text-xs text-[#00B7FF]"
-          >
-            Preview
+            onClick={() =>
+            previewUploadedFile(
+            file.file_path,
+            file.file_name
+              )
+           }
+             className="text-xs text-[#00B7FF] hover:underline"
+           >
+             Preview
           </button>
         </div>
       ))}
 
     </div>
+
+
+{uploadedPreviewUrl && (
+
+  <div className="mt-5 pt-5 border-t border-[#1F2937]">
+
+    <div className="flex items-center gap-2 mb-3">
+
+    <span className="text-xs text-zinc-500">
+      Now Playing
+    </span>
+
+    <span className="text-sm text-[#00B7FF] truncate">
+      {uploadedPreviewName}
+    </span>
+
+  </div>
+
+  <audio
+    controls
+    className="w-full"
+  >
+    <source src={uploadedPreviewUrl} />
+  </audio>
+
+</div>
+
+)}
+
+
 
   </div>
 
@@ -265,13 +444,75 @@ export default function ProjectPage() {
 
 <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 mb-6">
 
-  <h3 className="text-xl font-semibold mb-4">
+  <h3 className="text-xl font-semibold mb-6">
     Audio Preview
   </h3>
 
-  <p className="text-zinc-400">
-    Generated audio preview will appear here.
-  </p>
+  {project.audio_type === "mix" && (
+
+    <div className="mb-6">
+
+      <div className="flex items-center justify-between mb-3">
+
+        <h4 className="font-medium">
+          Original Mix
+        </h4>
+
+        <span className="text-xs text-zinc-500">
+          Source Audio
+        </span>
+
+      </div>
+
+      <div className="border border-[#1F2937] rounded-xl p-6">
+
+  <div
+    ref={waveformRef}
+    className="w-full min-h-[140px]"
+  />
+
+  <div className="flex items-center justify-between mt-4">
+
+    <button
+      onClick={() =>
+        wavesurferRef.current?.playPause()
+      }
+      className="px-4 py-2 rounded-lg bg-[#00B7FF] text-black font-medium hover:opacity-90"
+    >
+      Play / Pause
+    </button>
+
+    <span className="text-sm text-zinc-400">
+      {currentTime} / {duration}
+    </span>
+
+  </div>
+
+</div>
+
+    </div>
+
+  )}
+
+  <div>
+
+    <div className="flex items-center justify-between mb-3">
+
+      <h4 className="font-medium">
+        AI Assisted Master
+      </h4>
+
+      <span className="text-xs text-zinc-500">
+        Processed Output
+      </span>
+
+    </div>
+
+    <div className="h-24 rounded-xl border border-[#1F2937] flex items-center justify-center text-zinc-500">
+      Processing Not Complete
+    </div>
+
+  </div>
 
 </div>
 

@@ -120,6 +120,7 @@ if (uploadedFiles.length === 0) {
   name: projectName,
   workflow: "ai_assisted",
   genre,
+  audio_type: audioType,
   project_prompt: creativeDirection,
   status: "processing",
   progress: 15,
