@@ -116,14 +116,17 @@ if (uploadedFiles.length === 0) {
     const { data, error } = await supabase
       .from("projects")
       .insert({
-        user_id: user.id,
-        name: projectName,
-        workflow: "ai_assisted",
-        genre,
-        project_prompt: creativeDirection,
-        status: "ready_for_upload",
-        expires_at: expiresAt.toISOString(),
-      })
+  user_id: user.id,
+  name: projectName,
+  workflow: "ai_assisted",
+  genre,
+  project_prompt: creativeDirection,
+  status: "processing",
+  progress: 15,
+  current_task: "Waiting For AI Processing",
+  processing_stage: "uploaded",
+  expires_at: expiresAt.toISOString(),
+})
       .select();
 
     

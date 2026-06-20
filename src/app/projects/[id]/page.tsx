@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+
 import { supabase } from "@/lib/supabase";
+import { useParams, useRouter } from "next/navigation";
 
 export default function ProjectPage() {
   const params = useParams();
+  const router = useRouter();
 
   const [project, setProject] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
@@ -72,195 +74,304 @@ export default function ProjectPage() {
       {/* Header */}
 
       <div className="border-b border-[#1F2937] px-8 py-6">
-        <h1 className="heading-brand text-xl font-bold">
-          <span className="text-white">NOKASHI</span>
-          <span className="text-[#00B7FF]"> STUDIOS</span>
-        </h1>
-      </div>
+
+  <div className="flex items-center justify-between">
+
+    <h1 className="heading-brand text-xl font-bold">
+      <span className="text-white">NOKASHI</span>
+      <span className="text-[#00B7FF]"> STUDIOS</span>
+    </h1>
+
+    <div className="flex items-center gap-3">
+
+  <button
+    onClick={() => router.push("/projects")}
+    className="px-4 py-2 rounded-lg border border-[#1F2937] hover:border-[#00B7FF]"
+  >
+    Home
+  </button>
+
+  <button
+    onClick={() => router.push("/projects/list")}
+    className="px-4 py-2 rounded-lg border border-[#1F2937] hover:border-[#00B7FF]"
+  >
+    My Projects
+  </button>
+
+  <button
+    onClick={async () => {
+      await supabase.auth.signOut();
+      router.push("/login");
+    }}
+    className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400"
+  >
+    Logout
+  </button>
+
+</div>
+
+  </div>
+
+</div>
 
       <div className="max-w-7xl mx-auto px-8 py-12">
 
         {/* Project Header */}
 
-        <div className="mb-10">
-          <h2 className="text-4xl font-bold">
-            {project.name}
-          </h2>
+        <div className="flex flex-col lg:flex-row justify-between gap-6 mb-8">
 
-          <p className="text-[#00B7FF] mt-2">
-            AI Assisted
-          </p>
-        </div>
+  <div>
+    <h2 className="text-4xl font-bold">
+      {project.name}
+    </h2>
 
-        {/* Stats */}
+    <p className="text-[#00B7FF] mt-2">
+      AI Assisted
+    </p>
+  </div>
 
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
+  <div className="grid grid-cols-3 gap-3 w-full lg:w-auto lg:w-[420px]">
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
-            <p className="text-zinc-400 text-sm">
-              Files Uploaded
-            </p>
+    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-2">
+      <p className="text-xs text-zinc-400">
+        Files
+      </p>
 
-            <h3 className="text-3xl font-bold mt-2">
-              {files.length}
-            </h3>
-          </div>
+      <p className="text-lg font-semibold">
+        {files.length}
+      </p>
+    </div>
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
-            <p className="text-zinc-400 text-sm">
-              Days Remaining
-            </p>
+    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-2">
+      <p className="text-xs text-zinc-400">
+        Days Left
+      </p>
 
-            <h3 className="text-3xl font-bold mt-2">
-              {daysRemaining}
-            </h3>
-          </div>
+      <p className="text-lg font-semibold">
+        {daysRemaining}
+      </p>
+    </div>
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
-            <p className="text-zinc-400 text-sm">
-              Workflow
-            </p>
+    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-2">
+      <p className="text-xs text-zinc-400">
+        Workflow
+      </p>
 
-            <h3 className="text-xl font-bold mt-2 text-[#00B7FF]">
-              AI Assisted
-            </h3>
-          </div>
+      <p className="text-sm font-semibold text-[#00B7FF]">
+        AI Assisted
+      </p>
+    </div>
 
-        </div>
+  </div>
 
-        {/* Progress */}
+</div>
 
-        <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 mb-6">
+        
 
-          <div className="flex justify-between items-center mb-4">
-
-            <h3 className="text-xl font-semibold">
-              Processing Status
-            </h3>
-
-            <span className="px-3 py-1 rounded-full bg-[#00B7FF]/20 text-[#00B7FF] text-sm">
-              {project.status}
-            </span>
-
-          </div>
-
-          <div className="w-full bg-[#1F2937] rounded-full h-4">
-            <div
-              className="bg-[#00B7FF] h-4 rounded-full"
-              style={{ width: "15%" }}
-            />
-          </div>
-
-          <div className="mt-3 text-sm text-zinc-400">
-            15% Complete
-          </div>
-
-          <div className="mt-6">
-            <p className="text-zinc-400">
-              Current Task
-            </p>
-
-            <p className="mt-1 font-medium">
-              Waiting For AI Processing
-            </p>
-          </div>
-
-        </div>
-
-        {/* Timeline */}
-
-        <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 mb-6">
-
-          <h3 className="text-xl font-semibold mb-6">
-            Processing Timeline
-          </h3>
-
-          <div className="space-y-4">
-
-            <div className="flex items-center gap-3">
-              <span className="text-green-400">✓</span>
-              <span>Project Created</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-green-400">✓</span>
-              <span>Files Uploaded</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-zinc-500">○</span>
-              <span>Audio Analysis</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-zinc-500">○</span>
-              <span>AI Mixing</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-zinc-500">○</span>
-              <span>AI Mastering</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-zinc-500">○</span>
-              <span>Export Complete</span>
-            </div>
-
-          </div>
-
-        </div>
+        
 
         {/* Uploaded Files */}
 
-        <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-6 mb-6">
 
-          <h3 className="text-xl font-semibold mb-4">
-            Uploaded Files
-          </h3>
+  {/* Progress */}
 
-          {files.length === 0 ? (
-            <p className="text-zinc-400">
-              No files uploaded.
-            </p>
-          ) : (
-            <div className="space-y-3">
+  <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
 
-              {files.map((file) => (
-                <div
-                  key={file.id}
-                  className="border border-[#1F2937] rounded-xl px-4 py-3"
-                >
-                  <p className="font-medium">
-                    {file.file_name}
-                  </p>
+    <div className="flex justify-between mb-4">
 
-                  <p className="text-xs text-zinc-500">
-                    {file.file_type}
-                  </p>
-                </div>
-              ))}
+      <h3 className="text-xl font-semibold">
+        Processing Status
+      </h3>
 
-            </div>
-          )}
+      <span className="px-3 py-1 rounded-full bg-[#00B7FF]/20 text-[#00B7FF] text-sm">
+  {project.status
+    ?.split("_")
+    .map(
+      (word: string) =>
+        word.charAt(0).toUpperCase() +
+        word.slice(1)
+    )
+    .join(" ")}
+</span>
 
+    </div>
+
+    <div className="w-full bg-[#1F2937] rounded-full h-4">
+      <div
+        className="bg-[#00B7FF] h-4 rounded-full"
+        style={{
+          width: `${project.progress || 0}%`,
+        }}
+      />
+    </div>
+
+    <div className="grid grid-cols-5 mt-4 text-center text-xs text-zinc-400">
+
+      <span>Upload</span>
+      <span>Analysis</span>
+      <span>Mixing</span>
+      <span>Mastering</span>
+      <span>Export Ready</span>
+
+    </div>
+
+    <div className="mt-5 flex justify-between items-center">
+
+  <p className="font-medium">
+    {project.current_task}
+  </p>
+
+  <p className="text-2xl font-bold text-[#00B7FF]">
+    {project.progress}%
+  </p>
+
+</div>
+
+  </div>
+
+  {/* Uploaded Files */}
+
+  <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
+
+    <h3 className="text-xl font-semibold mb-4">
+      Uploaded Files
+    </h3>
+
+    <div className="max-h-[280px] overflow-y-auto space-y-3">
+
+      {files.map((file) => (
+        <div
+          key={file.id}
+          className="flex items-center justify-between border border-[#1F2937] rounded-lg px-3 py-3"
+        >
+          <p className="text-sm truncate">
+            {file.file_name}
+          </p>
+
+          <button
+            className="text-xs text-[#00B7FF]"
+          >
+            Preview
+          </button>
         </div>
+      ))}
+
+    </div>
+
+  </div>
+
+</div>
+
+<div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 mb-6">
+
+  <h3 className="text-xl font-semibold mb-4">
+    Audio Preview
+  </h3>
+
+  <p className="text-zinc-400">
+    Generated audio preview will appear here.
+  </p>
+
+</div>
+
+
+          
+
+        
 
         {/* Downloads */}
 
-        <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
+        {/* Generated Output */}
 
-          <h3 className="text-xl font-semibold mb-4">
-            Downloads
-          </h3>
+<div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
 
-          <p className="text-zinc-400">
-            No downloadable files available yet.
-          </p>
+  <div className="flex items-center justify-between mb-4">
 
-        </div>
+    <h3 className="text-xl font-semibold">
+      Generated Output
+    </h3>
 
+    <span className="text-xs px-3 py-1 rounded-full bg-[#00B7FF]/20 text-[#00B7FF]">
+      Coming Soon
+    </span>
+
+  </div>
+
+  <p className="text-zinc-400 mb-6">
+    AI-generated files will appear here when processing is complete.
+  </p>
+
+  <div className="space-y-3">
+
+    <div className="border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between opacity-50">
+
+      <div>
+        <p className="font-medium">
+          Master WAV
+        </p>
+
+        <p className="text-xs text-zinc-500">
+          High Quality Export
+        </p>
       </div>
+
+      <button
+        disabled
+        className="px-3 py-1 rounded-lg bg-[#1F2937] text-zinc-500 text-sm"
+      >
+        Download
+      </button>
+
     </div>
+
+    <div className="border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between opacity-50">
+
+      <div>
+        <p className="font-medium">
+          Master MP3
+        </p>
+
+        <p className="text-xs text-zinc-500">
+          Streaming Ready
+        </p>
+      </div>
+
+      <button
+        disabled
+        className="px-3 py-1 rounded-lg bg-[#1F2937] text-zinc-500 text-sm"
+      >
+        Download
+      </button>
+
+    </div>
+
+    <div className="border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between opacity-50">
+
+      <div>
+        <p className="font-medium">
+          Instrumental WAV
+        </p>
+
+        <p className="text-xs text-zinc-500">
+          Optional Export
+        </p>
+      </div>
+
+      <button
+        disabled
+        className="px-3 py-1 rounded-lg bg-[#1F2937] text-zinc-500 text-sm"
+      >
+        Download
+      </button>
+
+    </div>
+
+  </div>
+
+</div>
+</div>
+      </div>
+    
   );
 }

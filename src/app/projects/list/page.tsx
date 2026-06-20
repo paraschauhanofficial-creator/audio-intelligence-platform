@@ -126,7 +126,46 @@ const deleteProject = async (
 
 
 
-return ( <div className="min-h-screen bg-[#0A0A0A] text-white"> <div className="border-b border-[#1F2937] px-8 py-6"> <h1 className="heading-brand text-xl font-bold"> <span className="text-white">NOKASHI</span> <span className="text-[#00B7FF]"> STUDIOS</span> </h1> </div>
+return ( <div className="min-h-screen bg-[#0A0A0A] text-white"> 
+<div className="border-b border-[#1F2937] px-8 py-6">
+
+  <div className="flex items-center justify-between">
+
+    <h1 className="heading-brand text-xl font-bold">
+      <span className="text-white">NOKASHI</span>
+      <span className="text-[#00B7FF]"> STUDIOS</span>
+    </h1>
+
+    <div className="flex items-center gap-3">
+
+      <button
+        onClick={() => router.push("/projects")}
+        className="px-4 py-2 rounded-lg border border-[#1F2937] hover:border-[#00B7FF] hover:text-[#00B7FF] transition"
+      >
+        Home
+      </button>
+
+      <button
+        className="px-4 py-2 rounded-lg border border-[#00B7FF] text-[#00B7FF]"
+      >
+        My Projects
+      </button>
+
+      <button
+        onClick={async () => {
+          await supabase.auth.signOut();
+          router.push("/login");
+        }}
+        className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition"
+      >
+        Logout
+      </button>
+
+    </div>
+
+  </div>
+
+</div>
 
 
   <div className="max-w-7xl mx-auto px-8 py-12">
