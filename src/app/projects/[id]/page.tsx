@@ -46,6 +46,8 @@ export default function ProjectPage() {
 
   loadWaveform();
 
+ 
+
   return () => {
     if (wavesurferRef.current) {
       wavesurferRef.current.destroy();
@@ -68,6 +70,9 @@ export default function ProjectPage() {
 
 
 const loadWaveform = async () => {
+   if (!files[0]?.file_path) {
+  return;
+}
   try {
     const file = files[0];
 
@@ -116,14 +121,25 @@ wavesurferRef.current.on("timeupdate", () => {
 
 
 
-    wavesurferRef.current.load(
-      data.signedUrl
-    );
-
-  } catch (err) {
+    try {
+  await wavesurferRef.current.load(
+    data.signedUrl
+  );
+} catch (err: any) {
+  if (err?.name !== "AbortError") {
     console.error(err);
   }
+}
+
+} catch (err: any) {
+  if (err?.name !== "AbortError") {
+    console.error(err);
+  }
+}
 };
+
+
+
 
 
 
@@ -615,4 +631,4 @@ wavesurferRef.current.on("timeupdate", () => {
       </div>
     
   );
-}
+  }

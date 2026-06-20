@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getAudioMetadata } from "@/lib/audioAnalysis";
 
 export default function AIProjectPage() {
   const router = useRouter();
@@ -19,9 +20,7 @@ export default function AIProjectPage() {
   const [uploadComplete, setUploadComplete] = useState(false); 
 
 
-
-
-
+  
 
   const uploadFiles = async () => {
   const {
@@ -113,6 +112,27 @@ if (uploadedFiles.length === 0) {
 
 
 
+const metadata = await getAudioMetadata(files[0]);
+
+const duration = metadata.duration || 0;
+
+const mins = Math.floor(
+  duration / 60
+);
+
+const secs = Math.floor(
+  duration % 60
+);
+
+const durationText =
+  `${mins}:${secs
+    .toString()
+    .padStart(2, "0")}`;
+
+
+
+
+
     const { data, error } = await supabase
       .from("projects")
       .insert({
@@ -121,6 +141,12 @@ if (uploadedFiles.length === 0) {
   workflow: "ai_assisted",
   genre,
   audio_type: audioType,
+
+  duration: durationText,
+  sample_rate: metadata.sampleRate,
+  bitrate: metadata.bitrate,
+  codec: metadata.codec,
+
   project_prompt: creativeDirection,
   status: "processing",
   progress: 15,
@@ -157,7 +183,7 @@ if (fileError) {
   return;
 }
 
-alert("PROJECT CREATED");
+
 
 router.push(`/projects/${projectId}`);
   } catch (err) {
