@@ -3,7 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getAudioMetadata } from "@/lib/audioAnalysis";
+import {
+  getAudioMetadata,
+  detectTempo,
+} from "@/lib/audioAnalysis";
+
+
+
+
+
+
 
 export default function AIProjectPage() {
   const router = useRouter();
@@ -113,6 +122,18 @@ if (uploadedFiles.length === 0) {
 
 
 const metadata = await getAudioMetadata(files[0]);
+
+const tempo =
+  await detectTempo(
+    files[0]
+  );
+
+console.log(
+  "Detected BPM:",
+  tempo
+);
+
+
 
 const duration = metadata.duration || 0;
 

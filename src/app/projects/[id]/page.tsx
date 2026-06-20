@@ -307,7 +307,7 @@ max-w-[320px]
         Tempo
       </p>
 
-      <p className="text-xl font-semibold text-[#00B7FF]">
+      <p className="text-lg lg:text-xl font-semibold text-[#00B7FF]">
         {project.tempo || "--"}
       </p>
     </div>
@@ -317,7 +317,7 @@ max-w-[320px]
         Key
       </p>
 
-      <p className="text-xl font-semibold text-[#00B7FF]">
+      <p className="text-lg lg:text-xl font-semibold text-[#00B7FF]">
         {project.musical_key || "--"}
       </p>
     </div>
@@ -327,7 +327,7 @@ max-w-[320px]
         Scale
       </p>
 
-      <p className="text-xl font-semibold text-[#00B7FF]">
+      <p className="text-lg lg:text-xl font-semibold text-[#00B7FF]">
         {project.scale || "--"}
       </p>
     </div>
