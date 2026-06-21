@@ -1,6 +1,8 @@
 import { parseBlob } from "music-metadata-browser";
 
-export async function getAudioMetadata(file: File) {
+export async function getAudioMetadata(
+  file: File
+) {
   const metadata = await parseBlob(file);
 
   return {
@@ -10,16 +12,3 @@ export async function getAudioMetadata(file: File) {
     codec: metadata.format.codec,
   };
 }
-
-
-export async function detectTempo(
-  file: File
-) {
-  console.log(
-    "Tempo detection coming next"
-  );
-
-  return null;
-}
-
-

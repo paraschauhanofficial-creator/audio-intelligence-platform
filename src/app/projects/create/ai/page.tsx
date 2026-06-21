@@ -3,10 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import {
-  getAudioMetadata,
-  detectTempo,
-} from "@/lib/audioAnalysis";
+import {getAudioMetadata,detectTempo,} from "@/intelligence";
 
 
 
@@ -167,6 +164,7 @@ const durationText =
   sample_rate: metadata.sampleRate,
   bitrate: metadata.bitrate,
   codec: metadata.codec,
+  tempo: tempo,
 
   project_prompt: creativeDirection,
   status: "processing",
