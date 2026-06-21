@@ -302,37 +302,39 @@ max-w-[320px]
 
   <div className="grid grid-cols-3 gap-4 text-center">
 
-    <div>
-      <p className="text-[10px] text-zinc-500 uppercase">
-        Tempo
-      </p>
+  <div>
+    <p className="text-[10px] text-zinc-500 uppercase">
+      Tempo
+    </p>
 
-      <p className="text-lg lg:text-xl font-semibold text-[#00B7FF]">
-        {project.tempo || "--"}
-      </p>
-    </div>
-
-    <div>
-      <p className="text-[10px] text-zinc-500 uppercase">
-        Key
-      </p>
-
-      <p className="text-lg lg:text-xl font-semibold text-[#00B7FF]">
-        {project.musical_key || "--"}
-      </p>
-    </div>
-
-    <div>
-      <p className="text-[10px] text-zinc-500 uppercase">
-        Scale
-      </p>
-
-      <p className="text-lg lg:text-xl font-semibold text-[#00B7FF]">
-        {project.scale || "--"}
-      </p>
-    </div>
-
+    <p className="text-xl font-semibold text-[#00B7FF]">
+      {project.tempo || "--"}
+    </p>
   </div>
+
+  <div>
+    <p className="text-[10px] text-zinc-500 uppercase">
+      Signature
+    </p>
+
+    <p className="text-xl font-semibold text-[#00B7FF]">
+      {project.time_signature || "--"}
+    </p>
+  </div>
+
+  <div>
+    <p className="text-[10px] text-zinc-500 uppercase">
+      Key
+    </p>
+
+    <p className="text-xl font-semibold text-[#00B7FF]">
+      {project.musical_key
+        ? `${project.musical_key} ${project.scale || ""}`
+        : "--"}
+    </p>
+  </div>
+
+</div>
 
 
 

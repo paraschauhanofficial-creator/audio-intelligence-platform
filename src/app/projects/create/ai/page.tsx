@@ -3,7 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import {getAudioMetadata,detectTempo,} from "@/intelligence";
+import {
+  getAudioMetadata,
+  detectTempo,
+  detectKey,
+} from "@/intelligence";
 
 
 
@@ -120,17 +124,42 @@ if (uploadedFiles.length === 0) {
 
 const metadata = await getAudioMetadata(files[0]);
 
-const tempo =
+const tempoResult =
   await detectTempo(
     files[0]
   );
 
+  const keyResult =
+  await detectKey(
+    files[0]
+  );
+
+const musicalKey =
+  keyResult.key;
+
+const scale =
+  keyResult.scale;
+
 console.log(
-  "Detected BPM:",
-  tempo
+  "Key Result:",
+  keyResult
 );
 
 
+const tempo =
+  tempoResult.tempo;
+
+const timeSignature =
+  tempoResult.timeSignature;
+
+console.log(
+  "Tempo Result:",
+  tempoResult
+);
+
+console.log("tempo =", tempo);
+console.log("typeof tempo =", typeof tempo);
+console.log("timeSignature =", timeSignature);
 
 const duration = metadata.duration || 0;
 
@@ -148,11 +177,24 @@ const durationText =
     .padStart(2, "0")}`;
 
 
-
+console.log("INSERT VALUES", {
+  duration: durationText,
+  sample_rate: metadata.sampleRate,
+  bitrate: metadata.bitrate
+  ? Math.round(metadata.bitrate)
+  : null,
+  codec: metadata.codec,
+  tempo,
+  timeSignature,
+  musicalKey,
+  scale,
+});
 
 
     const { data, error } = await supabase
       .from("projects")
+
+      
       .insert({
   user_id: user.id,
   name: projectName,
@@ -165,7 +207,9 @@ const durationText =
   bitrate: metadata.bitrate,
   codec: metadata.codec,
   tempo: tempo,
-
+  time_signature: timeSignature,
+  musical_key: musicalKey,
+  scale: scale,
   project_prompt: creativeDirection,
   status: "processing",
   progress: 15,
