@@ -18,6 +18,10 @@ import {
 } from "./musicTheory";
 
 import {
+  findMatchingScales,
+} from "./scaleMatcher";
+
+import {
   detectTonicV2,
 } from "./tonicDetectorV2";
 
@@ -46,6 +50,54 @@ export async function detectKey(
         audioBuffer
       );
 
+
+      const detectedNotes =
+  chroma
+    .map(
+      (
+        value,
+        index
+      ) => ({
+        note:
+          NOTES[index],
+        value,
+      })
+    )
+    .filter(
+      (item) =>
+        item.value > 0
+    )
+    .sort(
+      (a, b) =>
+        b.value -
+        a.value
+    )
+    .slice(0, 7)
+    .map(
+      (item) =>
+        item.note
+    );
+
+console.log(
+  "[Aura Ears] Detected Notes:",
+  detectedNotes
+);
+
+const matchingScales =
+  findMatchingScales(
+    detectedNotes
+  );
+
+console.log(
+  "[Aura Ears] Matching Scales:"
+);
+
+console.table(
+  matchingScales.slice(
+    0,
+    10
+  )
+);
 
       const tonicIndex =
   detectTonic(
