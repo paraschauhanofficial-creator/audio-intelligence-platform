@@ -29,11 +29,18 @@ export async function extractChroma(
     );
 
   const frequency =
-    detectPitch(slice);
+  detectPitch(slice);
 
-  if (!frequency) {
-    continue;
-  }
+if (!frequency) {
+  continue;
+}
+
+if (
+  frequency < 200 ||
+  frequency > 5000
+) {
+  continue;
+}
 
   const midi =
     Math.round(

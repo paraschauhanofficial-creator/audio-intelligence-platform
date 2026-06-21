@@ -88,6 +88,11 @@ const matchingScales =
     detectedNotes
   );
 
+  console.log(
+  "[Aura Ears] Best Scale Candidate:",
+  matchingScales[0]
+);
+
 console.log(
   "[Aura Ears] Matching Scales:"
 );
@@ -187,8 +192,13 @@ console.log(
 
 
     return {
-  key: bestMatch?.key ?? null,
-  scale: bestMatch?.scale ?? null,
+  key:
+    matchingScales[0]?.key ??
+    null,
+
+  scale:
+    matchingScales[0]?.scale ??
+    null,
 };
 
   } catch (error) {
