@@ -345,6 +345,14 @@ const addFilesToProject = async (
       return;
     }
 
+
+setUploadedPreviewUrl("");
+setUploadedPreviewName("");
+setUploadedProgress(0);
+setUploadedPlaying(false);
+
+
+    
     loadProject();
     return;
   }
@@ -460,6 +468,11 @@ const deleteFile = async (
     return;
   }
 
+setUploadedPreviewUrl("");
+setUploadedPreviewName("");
+setUploadedProgress(0);
+setUploadedPlaying(false);
+  
   loadProject();
 };
 
@@ -1017,33 +1030,24 @@ style={{
   <div className="flex items-center justify-between mt-4">
 
     <button
-  onClick={() => {
-    if (!uploadedAudioRef.current)
-      return;
-
-    if (
-      uploadedAudioRef.current.paused
-    ) {
-      uploadedAudioRef.current.play();
-    } else {
-      uploadedAudioRef.current.pause();
-    }
-  }}
+  onClick={() =>
+    wavesurferRef.current?.playPause()
+  }
   className="
-    h-8
-    w-8
+    h-10
+    w-10
     rounded-full
     flex
     items-center
     justify-center
     text-black
     font-bold
-    transition
     hover:scale-105
+    transition
   "
   style={{
     backgroundColor: accentColor,
-    boxShadow: `0 0 10px ${accentColor}`,
+    boxShadow: `0 0 12px ${accentColor}`,
   }}
 >
   {isPlaying ? "❚❚" : "▶"}
