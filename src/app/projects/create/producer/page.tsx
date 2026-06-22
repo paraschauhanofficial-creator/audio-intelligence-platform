@@ -2,47 +2,264 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import {
+  getAudioMetadata,
+  detectTempo,
+  detectKey,
+} from "@/intelligence";
 
-export default function ProducerProjectPage() {
+
+
+
+
+
+
+export default function AIProjectPage() {
   const router = useRouter();
 
   const [projectName, setProjectName] = useState("");
   const [genre, setGenre] = useState("");
   const [creativeDirection, setCreativeDirection] = useState("");
 
-  const handleCreateProject = async () => {
+
+  const [audioType, setAudioType] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadComplete, setUploadComplete] = useState(false); 
+
+
+  
+
+  const uploadFiles = async () => {
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
     alert("Please login first");
-    return;
+    return [];
   }
 
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
+  setUploading(true);
 
-  const { error } = await supabase
-    .from("projects")
-    .insert({
-      user_id: user.id,
-      name: projectName,
-      workflow: "producer_mode",
-      genre,
-      project_prompt: creativeDirection,
-      status: "ready_for_upload",
-      expires_at: expiresAt.toISOString(),
+  const uploadedFiles = [];
+
+  for (const file of files) {
+    const filePath = `${user.id}/${Date.now()}-${file.name}`;
+
+    const { data, error } = await supabase.storage
+      .from("project-files")
+      .upload(filePath, file);
+
+    if (error) {
+      alert(error.message);
+      setUploading(false);
+      return [];
+    }
+
+    uploadedFiles.push({
+      file_name: file.name,
+      file_path: data.path,
+      file_type: file.type,
     });
-
-  if (error) {
-    alert(error.message);
-    return;
   }
 
-  router.push("/projects/list");
+  setUploading(false);
+  setUploadComplete(true);
+
+  return uploadedFiles;
 };
+
+
+
+
+
+  const handleCreateProject = async () => {
+
+
+if (!audioType) {
+  alert("Please select Mix or Stems");
+  return;
+}
+
+if (files.length === 0) {
+  alert("Please select files");
+  return;
+}
+
+
+
+  try {
+    
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    
+
+    
+
+    if (!user) {
+      alert("No user found");
+      return;
+    }
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    
+
+
+    const uploadedFiles = await uploadFiles();
+
+if (uploadedFiles.length === 0) {
+  return;
+}
+
+
+
+const metadata = await getAudioMetadata(files[0]);
+
+const tempoResult =
+  await detectTempo(
+    files[0]
+  );
+
+  const keyResult =
+  await detectKey(
+    files[0]
+  );
+
+const musicalKey =
+  keyResult.key;
+
+const scale =
+  keyResult.scale;
+
+console.log(
+  "Key Result:",
+  keyResult
+);
+
+
+const tempo =
+  tempoResult.tempo;
+
+const timeSignature =
+  tempoResult.timeSignature;
+
+console.log(
+  "Tempo Result:",
+  tempoResult
+);
+
+console.log("tempo =", tempo);
+console.log("typeof tempo =", typeof tempo);
+console.log("timeSignature =", timeSignature);
+
+const duration = metadata.duration || 0;
+
+const mins = Math.floor(
+  duration / 60
+);
+
+const secs = Math.floor(
+  duration % 60
+);
+
+const durationText =
+  `${mins}:${secs
+    .toString()
+    .padStart(2, "0")}`;
+
+
+console.log("INSERT VALUES", {
+  duration: durationText,
+  sample_rate: metadata.sampleRate,
+  bitrate: metadata.bitrate
+  ? Math.round(metadata.bitrate)
+  : null,
+  codec: metadata.codec,
+  tempo,
+  timeSignature,
+  musicalKey,
+  scale,
+});
+
+
+    const { data, error } = await supabase
+      .from("projects")
+
+      
+      .insert({
+  user_id: user.id,
+  name: projectName,
+  workflow: "producer_mode",
+  genre,
+  audio_type: audioType,
+
+  duration: durationText,
+  sample_rate: metadata.sampleRate,
+  bitrate: metadata.bitrate,
+  codec: metadata.codec,
+  tempo: tempo,
+  time_signature: timeSignature,
+  musical_key: musicalKey,
+  scale: scale,
+  project_prompt: creativeDirection,
+  status: "processing",
+  progress: 15,
+  current_task: "Waiting For AI Processing",
+  processing_stage: "uploaded",
+  expires_at: expiresAt.toISOString(),
+})
+      .select();
+
+    
+
+    if (error) {
+  alert(error.message);
+  return;
+}
+
+const projectId = data[0].id;
+
+const fileRows = uploadedFiles.map((file) => ({
+  project_id: projectId,
+  user_id: user.id,
+  file_name: file.file_name,
+  file_path: file.file_path,
+  file_type: file.file_type,
+}));
+
+const { error: fileError } = await supabase
+  .from("project_files")
+  .insert(fileRows);
+
+if (fileError) {
+  console.error(fileError);
+  alert(fileError.message);
+  return;
+}
+
+
+
+router.push(`/projects/${projectId}`);
+  } catch (err) {
+    console.error(err);
+    alert("CHECK CONSOLE");
+  }
+};
+
+
+
+
+
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white">
@@ -60,8 +277,7 @@ export default function ProducerProjectPage() {
         </h2>
 
         <p className="text-zinc-400 mb-10">
-          Start with an AI-generated mix and take full control of every
-          aspect of the production process.
+          Start with an AI-generated mix and take full control of every aspect of the production process.
         </p>
 
         <div className="space-y-6">
@@ -98,6 +314,7 @@ export default function ProducerProjectPage() {
               <option>EDM</option>
               <option>Jazz</option>
               <option>Classical</option>
+              <option>Podcast</option>
               <option>Devotional</option>
               <option>Film Score</option>
               <option>Other</option>
@@ -114,19 +331,116 @@ export default function ProducerProjectPage() {
               rows={6}
               value={creativeDirection}
               onChange={(e) => setCreativeDirection(e.target.value)}
-              placeholder="Describe your vision, preferred sound, instruments, vocal style, mixing approach, mastering goals, stereo image, effects, and production direction."
+              placeholder="Describe the sound, mood, instruments, references, vocal style, mix preferences, mastering target, etc."
               className="w-full bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-3 outline-none focus:border-[#14D8C4]"
             />
           </div>
 
-          {/* Producer Features Preview */}
-          <div className="border border-dashed border-[#1F2937] rounded-xl p-4 text-zinc-500">
-            AI Assisted Mix • DAW Workspace • Advanced Mixing Tools
-            <br />
-            <span className="text-sm">
-              Available after project creation
-            </span>
-          </div>
+        
+
+
+
+
+          <div>
+  <label className="block mb-3 text-sm text-zinc-400">
+    Audio Upload
+  </label>
+
+  <div className="flex gap-6 mb-4">
+    <label className="flex items-center gap-2">
+      <input
+        type="radio"
+        value="mix"
+        checked={audioType === "mix"}
+        onChange={(e) => setAudioType(e.target.value)}
+      />
+      Final Mix
+    </label>
+
+    <label className="flex items-center gap-2">
+      <input
+        type="radio"
+        value="stems"
+        checked={audioType === "stems"}
+        onChange={(e) => setAudioType(e.target.value)}
+      />
+      Stems
+    </label>
+  </div>
+
+  <input
+    type="file"
+    multiple
+    accept=".wav,.mp3,.flac,.aiff,.zip"
+    onChange={(e) =>
+      setFiles(
+        e.target.files
+          ? Array.from(e.target.files)
+          : []
+      )
+    }
+    className="w-full bg-[#111827] border border-[#1F2937] rounded-xl p-4"
+  />
+
+  {files.length > 0 && (
+  <div className="mt-3">
+
+    <div className="text-green-400 mb-3">
+      ✓ {files.length} file(s) selected
+    </div>
+
+    <div className="space-y-2">
+      {files.map((file, index) => (
+        <div
+          key={index}
+          className="flex items-center justify-between bg-[#111827] border border-[#1F2937] rounded-lg px-3 py-2"
+        >
+          <span className="text-sm">
+            {file.name}
+          </span>
+
+          <Trash2
+  size={16}
+  onClick={() =>
+    setFiles(
+      files.filter(
+        (_, i) =>
+          i !== index
+      )
+    )
+  }
+  className="
+    text-zinc-400
+    hover:text-[#14D8C4]
+    cursor-pointer
+    transition
+  "
+/>
+        </div>
+      ))}
+    </div>
+
+  </div>
+)}
+
+  {uploading && (
+  <div className="mt-2 text-[#14D8C4]">
+    Uploading files...
+  </div>
+)}
+
+{uploadComplete && (
+  <div className="mt-2 text-green-400">
+    ✓ Upload Complete
+  </div>
+)}
+
+
+</div>
+
+
+
+
 
           {/* Buttons */}
           <div className="flex gap-4">

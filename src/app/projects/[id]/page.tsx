@@ -2,7 +2,11 @@
 
 import { useEffect, useState, useRef } from "react";
 import WaveSurfer from "wavesurfer.js";
-import { Music2 } from "lucide-react";
+import {
+  Music2,
+  Trash2,
+  Plus,
+} from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
@@ -18,11 +22,25 @@ export default function ProjectPage() {
   const wavesurferRef = useRef<any>(null);
   const [currentTime, setCurrentTime] = useState("0:00");
   const [duration, setDuration] = useState("0:00");
+  const [isPlaying, setIsPlaying] =
+  useState(false);
   const [uploadedPreviewUrl, setUploadedPreviewUrl] =
   useState("");
 
   const [uploadedPreviewName, setUploadedPreviewName] =
   useState("");
+
+  const uploadedAudioRef =
+  useRef<HTMLAudioElement>(null);
+
+const [uploadedPlaying, setUploadedPlaying] =
+  useState(false);
+
+const [uploadedProgress, setUploadedProgress] =
+  useState(0);
+
+  const fileInputRef =
+  useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadProject();
@@ -96,8 +114,8 @@ const loadWaveform = async () => {
     wavesurferRef.current = WaveSurfer.create({
       container: waveformRef.current!,
       waveColor: "#1F2937",
-      progressColor: "#00B7FF",
-      cursorColor: "#00B7FF",
+      progressColor: accentColor,
+      cursorColor: accentColor,
       height: 80,
       barWidth: 2,
       barGap: 1,
@@ -118,6 +136,18 @@ wavesurferRef.current.on("timeupdate", () => {
     )
   );
 });
+
+
+
+wavesurferRef.current.on(
+  "play",
+  () => setIsPlaying(true)
+);
+
+wavesurferRef.current.on(
+  "pause",
+  () => setIsPlaying(false)
+);
 
 
 
@@ -145,6 +175,8 @@ wavesurferRef.current.on("timeupdate", () => {
 
 
   const loadProject = async () => {
+
+    
     const { data, error } = await supabase
       .from("projects")
       .select("*")
@@ -219,7 +251,240 @@ wavesurferRef.current.on("timeupdate", () => {
 
 
 
+const addFilesToProject = async (
+  event: React.ChangeEvent<HTMLInputElement>
+) => {
+
+  const selectedFiles =
+    event.target.files;
+
+  if (
+    !selectedFiles ||
+    !project
+  ) {
+    return;
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return;
+  }
+
+  // MIX PROJECT
+  if (
+    project.audio_type === "mix"
+  ) {
+
+    const newFile =
+      selectedFiles[0];
+
+    if (!newFile) {
+      return;
+    }
+
+    // delete existing files
+    for (const oldFile of files) {
+
+      await supabase.storage
+        .from("project-files")
+        .remove([
+          oldFile.file_path,
+        ]);
+
+      await supabase
+        .from("project_files")
+        .delete()
+        .eq(
+          "id",
+          oldFile.id
+        );
+    }
+
+    const filePath =
+      `${user.id}/${Date.now()}-${newFile.name}`;
+
+    const {
+      data,
+      error,
+    } = await supabase.storage
+      .from("project-files")
+      .upload(
+        filePath,
+        newFile
+      );
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    const {
+      error: insertError,
+    } = await supabase
+      .from("project_files")
+      .insert({
+        project_id:
+          project.id,
+        user_id:
+          user.id,
+        file_name:
+          newFile.name,
+        file_path:
+          data.path,
+        file_type:
+          newFile.type,
+      });
+
+    if (insertError) {
+      alert(
+        insertError.message
+      );
+      return;
+    }
+
+    loadProject();
+    return;
+  }
+
+  // STEMS PROJECT
+
+  const uploadedRows = [];
+
+  for (const file of Array.from(selectedFiles)) {
+
+    const filePath =
+      `${user.id}/${Date.now()}-${file.name}`;
+
+    const {
+      data,
+      error,
+    } = await supabase.storage
+      .from("project-files")
+      .upload(
+        filePath,
+        file
+      );
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    uploadedRows.push({
+      project_id:
+        project.id,
+      user_id:
+        user.id,
+      file_name:
+        file.name,
+      file_path:
+        data.path,
+      file_type:
+        file.type,
+    });
+  }
+
+  const { error } =
+    await supabase
+      .from("project_files")
+      .insert(
+        uploadedRows
+      );
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  loadProject();
+};
+
+
+
+
+
+
+const deleteFile = async (
+  fileId: string
+) => {
+
+  const confirmed =
+    confirm(
+      "Remove this file?"
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const fileToDelete =
+    files.find(
+      (file) =>
+        file.id === fileId
+    );
+
+  if (!fileToDelete) {
+    return;
+  }
+
+  const {
+    error: storageError,
+  } = await supabase.storage
+    .from("project-files")
+    .remove([
+      fileToDelete.file_path,
+    ]);
+
+  if (storageError) {
+    console.error(
+      storageError
+    );
+  }
+
+  const { error } =
+    await supabase
+      .from("project_files")
+      .delete()
+      .eq(
+        "id",
+        fileId
+      );
+
+  if (error) {
+    alert(
+      error.message
+    );
+    return;
+  }
+
+  loadProject();
+};
+
+
+const accentColor =
+  project?.workflow === "producer_mode"
+    ? "#14D8C4"
+    : "#00B7FF";
+
+const accentGlow =
+  project?.workflow === "producer_mode"
+    ? "#14D8C4"
+    : "#00B7FF";
+
+const workflowLabel =
+  project?.workflow === "producer_mode"
+    ? "Producer Mode"
+    : "AI Assisted";
+
+
   if (!project) {
+
+    
+
+    
     return (
       <div className="min-h-screen bg-[#0A0A0A] text-white flex items-center justify-center">
         Loading...
@@ -284,9 +549,14 @@ wavesurferRef.current.on("timeupdate", () => {
       {project.name}
     </h2>
 
-    <p className="text-[#00B7FF] mt-2">
-      AI Assisted
-    </p>
+    <p
+  className="mt-2"
+  style={{
+    color: accentColor,
+  }}
+>
+  {workflowLabel}
+</p>
   </div>
 
 
@@ -307,7 +577,12 @@ max-w-[320px]
       Tempo
     </p>
 
-    <p className="text-xl font-semibold text-[#00B7FF]">
+    <p
+  className="text-xl font-semibold"
+  style={{
+    color: accentColor,
+  }}
+>
       {project.tempo || "--"}
     </p>
   </div>
@@ -317,7 +592,12 @@ max-w-[320px]
       Signature
     </p>
 
-    <p className="text-xl font-semibold text-[#00B7FF]">
+    <p
+  className="text-xl font-semibold"
+  style={{
+    color: accentColor,
+  }}
+>
       {project.time_signature || "--"}
     </p>
   </div>
@@ -327,7 +607,12 @@ max-w-[320px]
       Key
     </p>
 
-    <p className="text-xl font-semibold text-[#00B7FF]">
+    <p
+  className="text-xl font-semibold"
+  style={{
+    color: accentColor,
+  }}
+>
       {project.musical_key
         ? `${project.musical_key} ${project.scale || ""}`
         : "--"}
@@ -393,9 +678,14 @@ max-w-[320px]
         Workflow
       </p>
 
-      <p className="text-sm font-semibold text-[#00B7FF]">
-        AI Assisted
-      </p>
+      <p
+  className="text-sm font-semibold"
+  style={{
+    color: accentColor,
+  }}
+>
+  {workflowLabel}
+</p>
     </div>
 
   </div>
@@ -420,7 +710,13 @@ max-w-[320px]
         Processing Status
       </h3>
 
-      <span className="px-3 py-1 rounded-full bg-[#00B7FF]/20 text-[#00B7FF] text-sm">
+      <span
+  className="px-3 py-1 rounded-full text-sm"
+  style={{
+    backgroundColor: `${accentColor}20`,
+    color: accentColor,
+       }}
+       >
   {project.status
     ?.split("_")
     .map(
@@ -435,8 +731,9 @@ max-w-[320px]
 
     <div className="w-full bg-[#1F2937] rounded-full h-4">
       <div
-        className="bg-[#00B7FF] h-4 rounded-full"
-        style={{
+  className="h-4 rounded-full"
+  style={{
+          backgroundColor: accentColor,
           width: `${project.progress || 0}%`,
         }}
       />
@@ -458,7 +755,12 @@ max-w-[320px]
     {project.current_task}
   </p>
 
-  <p className="text-2xl font-bold text-[#00B7FF]">
+  <p
+  className="text-2xl font-bold"
+  style={{
+    color: accentColor,
+  }}
+>
     {project.progress}%
   </p>
 
@@ -470,9 +772,44 @@ max-w-[320px]
 
   <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
 
-    <h3 className="text-xl font-semibold mb-4">
-      Uploaded Files
-    </h3>
+    <div className="flex items-center justify-between mb-4">
+
+  <h3 className="text-xl font-semibold">
+    Uploaded Files
+  </h3>
+
+  <button
+  onClick={() =>
+    fileInputRef.current?.click()
+  }
+  className="
+    flex items-center gap-2
+    text-sm
+    text-zinc-400
+    hover:opacity-80
+    transition
+  "
+>
+  <Plus size={16} />
+
+  {project.audio_type === "mix"
+    ? "Replace"
+    : "Files"}
+</button>
+
+
+<input
+  ref={fileInputRef}
+  type="file"
+  multiple
+  className="hidden"
+  onChange={
+    addFilesToProject
+  }
+/>
+
+
+</div>
 
     <div className="max-h-[350px] overflow-y-auto space-y-3">
 
@@ -485,17 +822,50 @@ max-w-[320px]
             {file.file_name}
           </p>
 
-          <button
-            onClick={() =>
-            previewUploadedFile(
-            file.file_path,
-            file.file_name
-              )
-           }
-             className="text-xs text-[#00B7FF] hover:underline"
-           >
-             Preview
-          </button>
+          <div className="flex items-center gap-3">
+
+
+
+
+  <div className="flex items-center gap-3">
+
+  <button
+    onClick={() =>
+      previewUploadedFile(
+        file.file_path,
+        file.file_name
+      )
+    }
+    className="text-xs hover:underline"
+style={{
+  color: accentColor,
+}}
+  >
+    Preview
+  </button>
+
+  <Trash2
+    size={16}
+    onClick={() =>
+      deleteFile(file.id)
+    }
+    className="
+      text-zinc-400
+      hover:opacity-80
+      cursor-pointer
+      transition
+    "
+  />
+
+</div>
+
+  
+
+</div>
+
+
+
+
         </div>
       ))}
 
@@ -512,18 +882,98 @@ max-w-[320px]
       Now Playing
     </span>
 
-    <span className="text-sm text-[#00B7FF] truncate">
+    <span className="text-sm" style={{ color: accentColor }}>
       {uploadedPreviewName}
     </span>
 
   </div>
 
   <audio
-    controls
-    className="w-full"
+  ref={uploadedAudioRef}
+  src={uploadedPreviewUrl}
+  className="hidden"
+  onTimeUpdate={() => {
+    if (!uploadedAudioRef.current)
+      return;
+
+    const progress =
+      (uploadedAudioRef.current.currentTime /
+        uploadedAudioRef.current.duration) *
+      100;
+
+    setUploadedProgress(
+      isNaN(progress)
+        ? 0
+        : progress
+    );
+  }}
+  onPlay={() =>
+    setUploadedPlaying(true)
+  }
+  onPause={() =>
+    setUploadedPlaying(false)
+  }
+/>
+
+<div className="flex items-center gap-3">
+
+  <button
+    onClick={() => {
+  if (!uploadedAudioRef.current)
+    return;
+
+  if (
+    uploadedAudioRef.current.paused
+  ) {
+    uploadedAudioRef.current.play();
+  } else {
+    uploadedAudioRef.current.pause();
+  }
+}}
   >
-    <source src={uploadedPreviewUrl} />
-  </audio>
+    {uploadedPlaying
+  ? "❚❚"
+  : "▶"}
+  </button>
+
+  <div
+  className="flex-1 h-[4px] bg-[#1F2937] rounded-full relative cursor-pointer"
+  onClick={(e) => {
+    if (!uploadedAudioRef.current) return;
+
+    const rect =
+      e.currentTarget.getBoundingClientRect();
+
+    const percent =
+      (e.clientX - rect.left) /
+      rect.width;
+
+    uploadedAudioRef.current.currentTime =
+      uploadedAudioRef.current.duration *
+      percent;
+  }}
+>
+
+  <div
+    className="h-full rounded-full"
+    style={{
+      width: `${uploadedProgress}%`,
+      backgroundColor: accentColor,
+    }}
+  />
+
+  <div
+    className="absolute top-1/2 -translate-y-1/2 h-3 w-3 rounded-full"
+    style={{
+      left: `calc(${uploadedProgress}% - 6px)`,
+      backgroundColor: accentColor,
+      boxShadow: `0 0 8px ${accentColor}`,
+    }}
+  />
+
+</div>
+
+</div>
 
 </div>
 
@@ -567,13 +1017,37 @@ max-w-[320px]
   <div className="flex items-center justify-between mt-4">
 
     <button
-      onClick={() =>
-        wavesurferRef.current?.playPause()
-      }
-      className="px-4 py-2 rounded-lg bg-[#00B7FF] text-black font-medium hover:opacity-90"
-    >
-      Play / Pause
-    </button>
+  onClick={() => {
+    if (!uploadedAudioRef.current)
+      return;
+
+    if (
+      uploadedAudioRef.current.paused
+    ) {
+      uploadedAudioRef.current.play();
+    } else {
+      uploadedAudioRef.current.pause();
+    }
+  }}
+  className="
+    h-8
+    w-8
+    rounded-full
+    flex
+    items-center
+    justify-center
+    text-black
+    font-bold
+    transition
+    hover:scale-105
+  "
+  style={{
+    backgroundColor: accentColor,
+    boxShadow: `0 0 10px ${accentColor}`,
+  }}
+>
+  {isPlaying ? "❚❚" : "▶"}
+</button>
 
     <span className="text-sm text-zinc-400">
       {currentTime} / {duration}
@@ -626,7 +1100,10 @@ max-w-[320px]
       Generated Output
     </h3>
 
-    <span className="text-xs px-3 py-1 rounded-full bg-[#00B7FF]/20 text-[#00B7FF]">
+    <span className="text-xs px-3 py-1 rounded-full" style={{
+          backgroundColor: `${accentColor}20`,
+          color: accentColor,
+     }}>
       Coming Soon
     </span>
 

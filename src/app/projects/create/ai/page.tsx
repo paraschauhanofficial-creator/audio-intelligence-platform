@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
   getAudioMetadata,
@@ -382,10 +383,45 @@ router.push(`/projects/${projectId}`);
   />
 
   {files.length > 0 && (
-    <div className="mt-3 text-green-400">
+  <div className="mt-3">
+
+    <div className="text-green-400 mb-3">
       ✓ {files.length} file(s) selected
     </div>
-  )}
+
+    <div className="space-y-2">
+      {files.map((file, index) => (
+        <div
+          key={index}
+          className="flex items-center justify-between bg-[#111827] border border-[#1F2937] rounded-lg px-3 py-2"
+        >
+          <span className="text-sm">
+            {file.name}
+          </span>
+
+          <Trash2
+  size={16}
+  onClick={() =>
+    setFiles(
+      files.filter(
+        (_, i) =>
+          i !== index
+      )
+    )
+  }
+  className="
+    text-zinc-400
+    hover:text-[#00B7FF]
+    cursor-pointer
+    transition
+  "
+/>
+        </div>
+      ))}
+    </div>
+
+  </div>
+)}
 
   {uploading && (
   <div className="mt-2 text-[#00B7FF]">
