@@ -303,7 +303,7 @@ const channelColor =
         ? "h-[620px]"
         : expandedView === "mixer"
   ? "h-0 overflow-hidden border-0 p-0"
-        : "h-[420px]"
+        : "h-[320px]"
     }
   `}
 >
@@ -383,7 +383,7 @@ const channelColor =
     flex
     items-center
     gap-0
-    h-20
+    h-15
     rounded-lg
     transition
     ${
