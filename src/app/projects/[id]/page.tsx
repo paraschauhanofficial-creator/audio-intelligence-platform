@@ -18,6 +18,17 @@ export default function ProjectPage() {
   const [project, setProject] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
   const [daysRemaining, setDaysRemaining] = useState(0);
+  const [editing, setEditing] =
+  useState(false);
+
+  const [editName, setEditName] =
+  useState("");
+
+  const [editGenre, setEditGenre] =
+  useState("");
+
+  const [editPrompt, setEditPrompt] =
+  useState("");
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<any>(null);
   const [currentTime, setCurrentTime] = useState("0:00");
@@ -189,6 +200,18 @@ wavesurferRef.current.on(
     }
 
     setProject(data);
+
+    setEditName(
+  data.name || ""
+);
+
+setEditGenre(
+  data.genre || ""
+);
+
+setEditPrompt(
+  data.project_prompt || ""
+);
 
     const expiryDate = new Date(data.expires_at);
     const today = new Date();
@@ -477,6 +500,39 @@ setUploadedPlaying(false);
 };
 
 
+
+const saveProjectDetails = async () => {
+
+  const { error } =
+    await supabase
+      .from("projects")
+      .update({
+        name: editName,
+        genre: editGenre,
+        project_prompt: editPrompt,
+      })
+      .eq(
+        "id",
+        project.id
+      );
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  setEditing(false);
+
+  loadProject();
+};
+
+
+
+
+
+
+
+
 const accentColor =
   project?.workflow === "producer_mode"
     ? "#14D8C4"
@@ -558,19 +614,115 @@ const workflowLabel =
         <div className="flex flex-col lg:flex-row justify-between items-start gap-6 mb-8">
 
   <div>
+
+  {editing ? (
+
+    <input
+      value={editName}
+      onChange={(e) =>
+        setEditName(
+          e.target.value
+        )
+      }
+      className="
+        bg-[#111827]
+        border border-[#1F2937]
+        rounded-lg
+        px-3 py-2
+        text-3xl
+        font-bold
+        w-full
+      "
+    />
+
+  ) : (
+
     <h2 className="text-4xl font-bold">
       {project.name}
     </h2>
 
-    <p
-  className="mt-2"
-  style={{
-    color: accentColor,
-  }}
->
-  {workflowLabel}
-</p>
-  </div>
+  )}
+
+  <p
+    className="mt-2"
+    style={{
+      color: accentColor,
+    }}
+  >
+    {workflowLabel}
+  </p>
+
+</div>
+
+
+<div className="flex gap-2">
+
+
+
+{project.workflow ===
+  "producer_mode" && (
+  <button
+    onClick={() =>
+      router.push(
+        `/projects/${project.id}/daw`
+      )
+    }
+    className="
+      px-4 py-2
+      rounded-lg
+      text-black
+      font-semibold
+    "
+    style={{
+      backgroundColor:
+        accentColor,
+    }}
+  >
+    Open DAW
+  </button>
+)}
+
+
+
+  {editing ? (
+
+    <button
+      onClick={
+        saveProjectDetails
+      }
+      className="
+        px-4 py-2
+        rounded-lg
+        text-black
+        font-semibold
+      "
+      style={{
+        backgroundColor:
+          accentColor,
+      }}
+    >
+      Save
+    </button>
+
+  ) : (
+
+    <button
+      onClick={() =>
+        setEditing(true)
+      }
+      className="
+        px-4 py-2
+        rounded-lg
+        border
+        border-[#1F2937]
+      "
+    >
+      Edit
+    </button>
+
+  )}
+
+</div>
 
 
 
@@ -706,6 +858,87 @@ max-w-[320px]
 </div>
 
         
+
+
+<div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 mb-6">
+
+  <h3 className="text-xl font-semibold mb-4">
+    Project Details
+  </h3>
+
+  <div className="space-y-4">
+
+    <div>
+      <p className="text-xs text-zinc-500 mb-1">
+        Genre
+      </p>
+
+      {editing ? (
+        <select
+          value={editGenre}
+          onChange={(e) =>
+            setEditGenre(
+              e.target.value
+            )
+          }
+          className="
+            w-full
+            bg-[#0A0A0A]
+            border border-[#1F2937]
+            rounded-lg
+            px-3 py-2
+          "
+        >
+          <option value="">Select Genre</option>
+          <option>Pop</option>
+          <option>Rock</option>
+          <option>Hip Hop</option>
+          <option>EDM</option>
+          <option>Jazz</option>
+          <option>Classical</option>
+          <option>Devotional</option>
+          <option>Film Score</option>
+          <option>Other</option>
+        </select>
+      ) : (
+        <p>{project.genre || "--"}</p>
+      )}
+    </div>
+
+    <div>
+      <p className="text-xs text-zinc-500 mb-1">
+        Creative Direction
+      </p>
+
+      {editing ? (
+        <textarea
+          rows={5}
+          value={editPrompt}
+          onChange={(e) =>
+            setEditPrompt(
+              e.target.value
+            )
+          }
+          className="
+            w-full
+            bg-[#0A0A0A]
+            border border-[#1F2937]
+            rounded-lg
+            px-3 py-2
+          "
+        />
+      ) : (
+        <p className="text-zinc-400 whitespace-pre-wrap">
+          {project.project_prompt ||
+            "No creative direction provided"}
+        </p>
+      )}
+    </div>
+
+  </div>
+
+</div>
+
 
         
 
