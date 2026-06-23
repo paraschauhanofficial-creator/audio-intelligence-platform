@@ -14,6 +14,45 @@ export default function DAWPage() {
       "main"
     );
 
+
+
+
+
+    const [mutedTracks, setMutedTracks] =
+  useState<string[]>([]);
+
+const [soloTrack, setSoloTrack] =
+  useState<string | null>(null);
+
+  const toggleMute = (
+  track: string
+) => {
+  setMutedTracks((prev) =>
+    prev.includes(track)
+      ? prev.filter(
+          (t) => t !== track
+        )
+      : [...prev, track]
+  );
+};
+
+
+const toggleSolo = (
+  track: string
+) => {
+  setSoloTrack((prev) =>
+    prev === track
+      ? null
+      : track
+  );
+};
+
+
+
+
+
+
+
     const [expandedView, setExpandedView] =
   useState<
     "none" |
@@ -263,17 +302,291 @@ const channelColor =
       expandedView === "timeline"
         ? "h-[620px]"
         : expandedView === "mixer"
-        ? "h-[120px]"
+  ? "h-0 overflow-hidden border-0 p-0"
         : "h-[420px]"
     }
   `}
 >
-                Timeline Coming Soon
+                <div className="w-full h-full p-4 relative">
+
+                    {/* Global Playhead */}
+
+<div
+  className="
+    absolute
+    top-[52px]
+    bottom-[24px]
+    left-[214px]
+    w-[1px]
+    bg-[#14D8C4]
+    z-50
+    shadow-[0_0_10px_#14D8C4]
+  "
+/>
+
+
+
+  {/* Ruler */}
+
+  <div className="flex mb-2">
+
+    
+
+  <div
+    className="
+      w-[180px]
+      flex-shrink-0
+    "
+  />
+
+  <div className="flex-1">
+
+    <div className="grid grid-cols-12 text-xs text-zinc-500">
+
+      {Array.from({
+        length: 12,
+      }).map((_, i) => (
+
+        <div
+          key={i}
+          className="
+            border-l
+            border-[#1F2937]
+            pl-2
+          "
+        >
+          {i + 1}
+        </div>
+
+      ))}
+
+    </div>
+
+  </div>
+
+</div>
+
+  {/* Tracks */}
+
+  <div className="space-y-0.5">
+
+    {[
+      "Kick",
+      "Bass",
+      "Piano",
+      "Vocal",
+    ].map((track) => (
+
+      <div
+  key={track}
+  className={`
+    flex
+    items-center
+    gap-0
+    h-20
+    rounded-lg
+    transition
+    ${
+      selectedTrack === track
+        ? "bg-[#14D8C410]"
+        : ""
+    }
+  `}
+>
+
+  {/* Track Header */}
+
+  <div
+    className="
+      w-[180px]
+      h-full
+      flex
+      items-center
+      gap-3
+      px-3
+      border-r
+      border-[#1F2937]
+      bg-[#0A0A0A40]
+      flex-shrink-0
+    "
+  >
+
+    {/* Mute */}
+
+    <button
+      onClick={() =>
+        toggleMute(track)
+      }
+      className={`
+        w-7
+        h-7
+        rounded-md
+        border
+        text-xs
+        ${
+          mutedTracks.includes(track)
+            ? "border-[#FF6B4A] bg-[#FF6B4A20] text-[#FF6B4A]"
+            : "border-[#1F2937]"
+        }
+      `}
+    >
+      M
+    </button>
+
+    {/* Solo */}
+
+    <button
+      onClick={() =>
+        toggleSolo(track)
+      }
+      className={`
+        w-7
+        h-7
+        rounded-md
+        border
+        text-xs
+        ${
+          soloTrack === track
+            ? "border-[#14D8C4] bg-[#14D8C420] text-[#14D8C4]"
+            : "border-[#1F2937]"
+        }
+      `}
+    >
+      S
+    </button>
+
+    {/* Track Name */}
+
+    <button
+      onClick={() =>
+        setSelectedTrack(track)
+      }
+      className={`
+        text-left
+        text-sm
+        transition
+        ${
+          selectedTrack === track
+            ? "text-[#14D8C4]"
+            : "text-zinc-300"
+        }
+      `}
+    >
+      {track}
+    </button>
+
+  </div>
+
+
+
+
+
+        {/* Fake Waveform */}
+
+        
+
+        <div className="flex-1 h-full relative overflow-hidden rounded-lg border border-[#1F2937] bg-[#0A0A0A]">
+
+
+
+
+
+{/* Playhead */}
+
+
+
+
+
+  {/* Grid */}
+
+  
+
+  <div className="absolute inset-0 flex justify-between">
+
+    {Array.from({ length: 12 }).map(
+      (_, i) => (
+        <div
+          key={i}
+          className="w-px h-full bg-[#1F2937]"
+        />
+      )
+    )}
+
+  </div>
+
+  {/* Waveform Placeholder */}
+
+  <div
+  className="
+    absolute
+    inset-0
+    left-0
+    w-full
+      flex
+      items-center
+      px-2
+      gap-[2px]
+    "
+  >
+
+    {[
+      20, 40, 65, 35, 80, 50,
+      25, 60, 75, 30, 55, 25,
+      70, 40, 20, 65, 45, 30,
+    ].map((h, i) => (
+
+      <div
+        key={i}
+        className="w-[3px] rounded-full"
+        style={{
+          height: `${h}%`,
+          backgroundColor: "#14D8C4",
+          opacity: 0.85,
+        }}
+      />
+
+    ))}
+
+  </div>
+
+</div>
+
+
+
+
+      </div>
+
+    ))}
+
+  </div>
+
+</div>
+
+
+
+
               </div>
 
             </div>
 
-            <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
+            <div
+  className={`
+  bg-[#111827]
+  border
+  border-[#1F2937]
+  rounded-2xl
+  p-6
+  transition-all
+  duration-300
+  ${
+    expandedView === "timeline"
+      ? "h-0 overflow-hidden border-0 p-0"
+      : expandedView === "mixer"
+      ? "h-[620px]"
+      : ""
+  }
+`}
+>
 
               <div className="flex items-center justify-between mb-4">
 
@@ -300,27 +613,140 @@ const channelColor =
 
               <div
   className={`
-    border
-    border-dashed
-    border-[#1F2937]
-    rounded-xl
     flex
-    items-center
-    justify-center
-    text-zinc-500
+    gap-3
     transition-all
     duration-300
     ${
       expandedView === "mixer"
-        ? "h-[500px]"
+        ? "h-[260px]"
         : expandedView === "timeline"
-        ? "h-[80px]"
-        : "h-[140px]"
+        ? "h-[90px] overflow-hidden"
+        : "h-[220px]"
     }
   `}
 >
-                Mixer Coming Soon
-              </div>
+
+  {/* Track Channels - 65% */}
+
+  <div className="w-[65%] border border-[#1F2937] rounded-xl p-4">
+
+    <h4 className="text-sm text-zinc-400 mb-4">
+      Tracks
+    </h4>
+
+    <div className="flex gap-2 h-full items-center overflow-x-auto">
+
+      {[
+        "Kick",
+        "Bass",
+        "Piano",
+        "Vocal",
+      ].map((track) => (
+
+        <button
+          key={track}
+          onClick={() =>
+            setSelectedTrack(track)
+          }
+          className={`
+  w-12
+  rounded-lg
+  border
+  border-[#1F2937]
+  flex
+  flex-col
+  items-center
+  justify-end
+  pb-2
+  transition
+  flex-shrink-0
+  ${
+    selectedTrack === track
+      ? "bg-[#14D8C410] border-[#14D8C4]"
+      : ""
+  }
+`}
+        >
+
+          <div className="w-2 h-[110px] bg-[#1F2937] rounded-full relative mb-3">
+
+            <div
+              className="absolute bottom-0 left-0 right-0 rounded-full bg-[#14D8C4]"
+              style={{
+                height: "60%",
+              }}
+            />
+
+          </div>
+
+          <span className="text-xs">
+            {track}
+          </span>
+
+        </button>
+
+      ))}
+
+    </div>
+
+  </div>
+
+  {/* Sends & Buses - 35% */}
+
+  <div className="w-[35%] border border-[#1F2937] rounded-xl p-4">
+
+    <h4 className="text-sm text-zinc-400 mb-4">
+      Sends / Buses
+    </h4>
+
+    <div className="flex gap-2 h-full items-center justify-center">
+
+      {[
+        "Verb",
+        "Delay",
+      ].map((bus) => (
+
+        <div
+          key={bus}
+          className="
+  w-12
+  rounded-lg
+  border
+  border-[#1F2937]
+  flex
+  flex-col
+  items-center
+  justify-end
+  pb-2
+  flex-shrink-0
+"
+        >
+
+          <div className="w-2 h-[90px] bg-[#1F2937] rounded-full relative mb-3">
+
+            <div
+              className="absolute bottom-0 left-0 right-0 rounded-full bg-[#FF6B4A]"
+              style={{
+                height: "50%",
+              }}
+            />
+
+          </div>
+
+          <span className="text-xs">
+            {bus}
+          </span>
+
+        </div>
+
+      ))}
+
+    </div>
+
+  </div>
+
+</div>
 
             </div>
 
@@ -392,7 +818,7 @@ const channelColor =
             {inspectorView ===
             "main" ? (
 
-              <div className="space-y-3">
+              <div className="space-y-1">
 
                 <div className="border border-[#1F2937] rounded-lg p-3">
                   Gain
