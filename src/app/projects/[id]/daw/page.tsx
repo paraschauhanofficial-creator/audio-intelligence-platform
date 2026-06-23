@@ -79,7 +79,7 @@ const channelColor =
   };
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white">
+    <div className="h-screen overflow-hidden bg-[#0A0A0A] text-white flex flex-col">
 
       {/* Header */}
 
@@ -123,11 +123,11 @@ const channelColor =
 
       </div>
 
-      <div className="p-4">
+      <div className="p-4 flex-1 overflow-hidden flex flex-col">
 
-        {/* Session Bar */}
+  {/* Session Bar */}
 
-        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_2fr] gap-4 mb-6">
+  <div className="grid grid-cols-[2fr_1fr_1fr_1fr_2fr] gap-4 mb-4 flex-shrink-0">
 
             <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-3">
 
@@ -201,15 +201,18 @@ const channelColor =
 
         <div
   className="
+    flex-1
+    min-h-0
+    overflow-hidden
     grid
-    grid-cols-[180px_1fr_220px_90px_70px]
+    grid-cols-[180px_1fr_180px_80px_60px]
     gap-4
   "
 >
 
           {/* Tracks */}
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-4 overflow-y-auto">
+          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-4 overflow-y-auto min-h-0">
 
             <h3 className="text-lg font-semibold mb-4">
               Tracks
@@ -255,13 +258,34 @@ const channelColor =
           {/* Timeline + Mixer */}
 
           <div
-  className={`
-    space-y-4
-    transition-all
-  `}
+  className="
+    h-full
+    flex
+    flex-col
+    gap-4
+    overflow-hidden
+  "
 >
 
-            <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
+            <div
+  className={`
+    bg-[#111827]
+    border
+    border-[#1F2937]
+    rounded-2xl
+    p-6
+    flex
+    flex-col
+    min-h-0
+    ${
+      expandedView === "timeline"
+        ? "flex-1"
+        : expandedView === "mixer"
+        ? "hidden"
+        : "h-[60%]"
+    }
+  `}
+>
 
               <div className="flex items-center justify-between mb-4">
 
@@ -288,6 +312,8 @@ const channelColor =
 
               <div
   className={`
+    flex-1
+    min-h-0
     border
     border-dashed
     border-[#1F2937]
@@ -300,10 +326,10 @@ const channelColor =
     duration-300
     ${
       expandedView === "timeline"
-        ? "h-[620px]"
-        : expandedView === "mixer"
-  ? "h-0 overflow-hidden border-0 p-0"
-        : "h-[320px]"
+  ? "flex-1"
+  : expandedView === "mixer"
+  ? "hidden"
+  : "h-[55%]"
     }
   `}
 >
@@ -368,7 +394,14 @@ const channelColor =
 
   {/* Tracks */}
 
-  <div className="space-y-0.5">
+  <div
+  className="
+    space-y-0.5
+    h-full
+    overflow-y-auto
+    pr-2
+  "
+>
 
     {[
       "Kick",
@@ -571,21 +604,24 @@ const channelColor =
 
             <div
   className={`
-  bg-[#111827]
-  border
-  border-[#1F2937]
-  rounded-2xl
-  p-6
-  transition-all
-  duration-300
-  ${
-    expandedView === "timeline"
-      ? "h-0 overflow-hidden border-0 p-0"
-      : expandedView === "mixer"
-      ? "h-[620px]"
-      : ""
-  }
-`}
+    bg-[#111827]
+    border
+    border-[#1F2937]
+    rounded-2xl
+    p-6
+    flex
+    flex-col
+    min-h-0
+    transition-all
+    duration-300
+    ${
+      expandedView === "timeline"
+        ? "hidden"
+        : expandedView === "mixer"
+        ? "flex-1"
+        : "h-[40%]"
+    }
+  `}
 >
 
               <div className="flex items-center justify-between mb-4">
@@ -612,30 +648,35 @@ const channelColor =
               </div>
 
               <div
-  className={`
+  className="
     flex
     gap-3
-    transition-all
-    duration-300
-    ${
-      expandedView === "mixer"
-        ? "h-[260px]"
-        : expandedView === "timeline"
-        ? "h-[90px] overflow-hidden"
-        : "h-[220px]"
-    }
-  `}
+    flex-1
+    min-h-0
+    overflow-hidden
+  "
 >
 
   {/* Track Channels - 65% */}
 
-  <div className="w-[65%] border border-[#1F2937] rounded-xl p-4">
+  <div className="w-[65%] min-w-0 border border-[#1F2937] rounded-xl p-4">
 
     <h4 className="text-sm text-zinc-400 mb-4">
       Tracks
     </h4>
 
-    <div className="flex gap-2 h-full items-center overflow-x-auto">
+    <div
+  className="
+    flex
+    gap-2
+    flex-1
+    min-h-0
+    items-end
+    overflow-x-auto
+    overflow-y-hidden
+    min-w-0
+  "
+>
 
       {[
         "Kick",
@@ -669,7 +710,7 @@ const channelColor =
 `}
         >
 
-          <div className="w-2 h-[110px] bg-[#1F2937] rounded-full relative mb-3">
+          <div className="w-2 h-[80px] bg-[#1F2937] rounded-full relative mb-3">
 
             <div
               className="absolute bottom-0 left-0 right-0 rounded-full bg-[#14D8C4]"
@@ -694,13 +735,13 @@ const channelColor =
 
   {/* Sends & Buses - 35% */}
 
-  <div className="w-[35%] border border-[#1F2937] rounded-xl p-4">
+  <div className="w-[35%] flex-shrink-0 border border-[#1F2937] rounded-xl p-4">
 
     <h4 className="text-sm text-zinc-400 mb-4">
       Sends / Buses
     </h4>
 
-    <div className="flex gap-2 h-full items-center justify-center">
+    <div className="flex gap-2 flex-1 min-h-0 items-end justify-center overflow-hidden">
 
       {[
         "Verb",
@@ -723,7 +764,7 @@ const channelColor =
 "
         >
 
-          <div className="w-2 h-[90px] bg-[#1F2937] rounded-full relative mb-3">
+          <div className="w-2 h-[80px] bg-[#1F2937] rounded-full relative mb-3">
 
             <div
               className="absolute bottom-0 left-0 right-0 rounded-full bg-[#FF6B4A]"
@@ -754,7 +795,7 @@ const channelColor =
 
           {/* Inspector */}
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
+          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 overflow-y-auto min-h-0">
 
             <h3
   className="text-lg font-semibold mb-4"
@@ -769,51 +810,45 @@ const channelColor =
     : " Channel"}
 </h3>
 
-            <div className="flex gap-2 mb-4">
+           <div className="flex flex-col gap-2 mb-4">
 
-              <button
-                onClick={() =>
-                  setInspectorView(
-                    "main"
-                  )
-                }
-                className={`
-  px-3 py-1
-  rounded-lg
-  border
-  transition
-  ${
-    inspectorView === "main"
-      ? "border-[#14D8C4]"
-      : "border-[#1F2937]"
-  }
-`}
-              >
-                Main
-              </button>
+  <button
+    onClick={() => setInspectorView("main")}
+    className={`
+      w-full
+      py-2
+      rounded-lg
+      border
+      transition
+      ${
+        inspectorView === "main"
+          ? "border-[#14D8C4]"
+          : "border-[#1F2937]"
+      }
+    `}
+  >
+    Main
+  </button>
 
-              <button
-                onClick={() =>
-                  setInspectorView(
-                    "sends"
-                  )
-                }
-                className={`
-  px-3 py-1
-  rounded-lg
-  border
-  transition
-  ${
-    inspectorView === "sends"
-      ? "border-[#FF6B4A] bg-[#FF6B4A15]"
-      : "border-[#1F2937]"
-  }
-`}
-              >
-                Sends
-              </button>
+  <button
+    onClick={() => setInspectorView("sends")}
+    className={`
+      w-full
+      py-2
+      rounded-lg
+      border
+      transition
+      ${
+        inspectorView === "sends"
+          ? "border-[#FF6B4A] bg-[#FF6B4A15]"
+          : "border-[#1F2937]"
+      }
+    `}
+  >
+    Sends
+  </button>
 
-            </div>
+</div>
 
             {inspectorView ===
             "main" ? (
@@ -833,7 +868,7 @@ const channelColor =
                 </div>
 
                 <div className="border border-[#1F2937] rounded-lg p-3">
-                  Compressor
+                  Comp
                 </div>
 
               </div>
@@ -862,7 +897,7 @@ const channelColor =
 
           {/* Channel Strip */}
 
-<div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-3 h-full">
+<div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-3 overflow-hidden min-h-0 flex flex-col">
 
   <h3
     className="text-center text-sm font-semibold mb-4"
@@ -881,9 +916,14 @@ const channelColor =
 
   </p>
 
-  <div className="h-[520px] flex items-center justify-center gap-3">
 
-    <div className="text-[8px] text-zinc-500 flex flex-col justify-between h-[520px] -ml-2">
+
+<div className="flex-1 min-h-0 flex items-center justify-center gap-2">
+
+
+  <div className="text-[8px] text-zinc-500 flex flex-col justify-between h-full -ml-2">
+
+    
 
   <span>0</span>
   <span>-6</span>
@@ -894,7 +934,8 @@ const channelColor =
 
 </div>
 
-<div className="w-3 h-[520px] bg-[#1F2937] rounded-full relative">
+
+<div className="w-3 h-full bg-[#1F2937] rounded-full relative">
 
   <div
     className="absolute bottom-0 left-0 right-0 rounded-full"
@@ -906,7 +947,7 @@ const channelColor =
 
 </div>
 
-<div className="w-5 h-[520px] relative">
+<div className="w-5 h-full relative">
 
   <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-[#1F2937]" />
 
@@ -926,9 +967,9 @@ const channelColor =
 
           {/* Master */}
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-3 h-full">
+          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-3 overflow-hidden min-h-0 flex flex-col">
 
-            <h3 className="text-center text-[13px] font-semibold mb-4 -ml-1">
+            <h3 className="text-center text-[13px] font-semibold mb-4 -ml-2">
                 MASTER
             </h3>
 
@@ -936,9 +977,9 @@ const channelColor =
              BUS
             </p>
 
-            <div className="h-[520px] flex items-center justify-center gap-3">
+            <div className="flex-1 min-h-0 flex items-center justify-center gap-2">
 
-                <div className="text-[8px] text-zinc-500 flex flex-col justify-between h-[520px] -ml-2">
+                <div className="text-[8px] text-zinc-500 flex flex-col justify-between h-full -ml-2">
 
   <span>0</span>
   <span>-6</span>
@@ -949,7 +990,7 @@ const channelColor =
 
 </div>
 
-<div className="w-3 h-[520px] bg-[#1F2937] rounded-full relative">
+<div className="w-3 h-full bg-[#1F2937] rounded-full relative">
 
   <div
     className="absolute bottom-0 left-0 right-0 rounded-full"
@@ -961,7 +1002,7 @@ const channelColor =
 
 </div>
 
-<div className="w-5 h-[520px] relative">
+<div className="w-5 h-full relative">
 
   <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-[#1F2937]" />
 
@@ -978,11 +1019,11 @@ const channelColor =
             </div>
 
           </div>
-
+         </div>
         </div>
 
       </div>
 
-    </div>
+    
   );
 }
