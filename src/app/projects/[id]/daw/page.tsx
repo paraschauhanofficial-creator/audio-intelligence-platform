@@ -14,7 +14,12 @@ export default function DAWPage() {
       "main"
     );
 
-    
+    const [expandedView, setExpandedView] =
+  useState<
+    "none" |
+    "timeline" |
+    "mixer"
+  >("none");
 
     const isSendMode =
   inspectorView === "sends";
@@ -39,9 +44,9 @@ const channelColor =
 
       {/* Header */}
 
-      <div className="border-b border-[#1F2937] px-8 py-6">
+      <div className="h-[72px] border-b border-[#1F2937] px-8 flex items-center">
 
-        <div className="flex items-center justify-between">
+  <div className="flex items-center justify-between w-full">
 
           <h1 className="text-2xl font-bold">
             Producer Workspace
@@ -79,13 +84,13 @@ const channelColor =
 
       </div>
 
-      <div className="p-6">
+      <div className="p-4">
 
         {/* Session Bar */}
 
         <div className="grid grid-cols-[2fr_1fr_1fr_1fr_2fr] gap-4 mb-6">
 
-            <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
+            <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-3">
 
   <p className="text-xs text-zinc-500">
     Project
@@ -99,7 +104,7 @@ const channelColor =
 
 
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
+          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-3">
             <p className="text-xs text-zinc-500">
               Tempo
             </p>
@@ -109,7 +114,7 @@ const channelColor =
             </p>
           </div>
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
+          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-3">
             <p className="text-xs text-zinc-500">
               Key
             </p>
@@ -119,7 +124,7 @@ const channelColor =
             </p>
           </div>
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
+          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-3">
             <p className="text-xs text-zinc-500">
               Signature
             </p>
@@ -129,7 +134,7 @@ const channelColor =
             </p>
           </div>
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
+          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-3">
 
             <p className="text-xs text-zinc-500 mb-2">
               Transport
@@ -155,11 +160,17 @@ const channelColor =
 
         {/* Workspace */}
 
-        <div className="grid grid-cols-[180px_1fr_220px_90px_70px] gap-4">
+        <div
+  className="
+    grid
+    grid-cols-[180px_1fr_220px_90px_70px]
+    gap-4
+  "
+>
 
           {/* Tracks */}
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-4">
+          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-4 overflow-y-auto">
 
             <h3 className="text-lg font-semibold mb-4">
               Tracks
@@ -204,7 +215,12 @@ const channelColor =
 
           {/* Timeline + Mixer */}
 
-          <div className="space-y-4">
+          <div
+  className={`
+    space-y-4
+    transition-all
+  `}
+>
 
             <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
 
@@ -214,13 +230,44 @@ const channelColor =
                   Timeline
                 </h3>
 
-                <button className="text-xs text-zinc-400">
-                  Expand
-                </button>
+                <button
+  onClick={() =>
+    setExpandedView(
+      expandedView === "timeline"
+        ? "none"
+        : "timeline"
+    )
+  }
+  className="text-xs text-zinc-400"
+>
+  {expandedView === "timeline"
+    ? "Restore"
+    : "Expand"}
+</button>
 
               </div>
 
-              <div className="h-[500px] border border-dashed border-[#1F2937] rounded-xl flex items-center justify-center text-zinc-500">
+              <div
+  className={`
+    border
+    border-dashed
+    border-[#1F2937]
+    rounded-xl
+    flex
+    items-center
+    justify-center
+    text-zinc-500
+    transition-all
+    duration-300
+    ${
+      expandedView === "timeline"
+        ? "h-[620px]"
+        : expandedView === "mixer"
+        ? "h-[120px]"
+        : "h-[420px]"
+    }
+  `}
+>
                 Timeline Coming Soon
               </div>
 
@@ -234,13 +281,44 @@ const channelColor =
                   Mixer
                 </h3>
 
-                <button className="text-xs text-zinc-400">
-                  Expand
-                </button>
+                <button
+  onClick={() =>
+    setExpandedView(
+      expandedView === "mixer"
+        ? "none"
+        : "mixer"
+    )
+  }
+  className="text-xs text-zinc-400"
+>
+  {expandedView === "mixer"
+    ? "Restore"
+    : "Expand"}
+</button>
 
               </div>
 
-              <div className="h-[220px] border border-dashed border-[#1F2937] rounded-xl flex items-center justify-center text-zinc-500">
+              <div
+  className={`
+    border
+    border-dashed
+    border-[#1F2937]
+    rounded-xl
+    flex
+    items-center
+    justify-center
+    text-zinc-500
+    transition-all
+    duration-300
+    ${
+      expandedView === "mixer"
+        ? "h-[500px]"
+        : expandedView === "timeline"
+        ? "h-[80px]"
+        : "h-[140px]"
+    }
+  `}
+>
                 Mixer Coming Soon
               </div>
 
@@ -377,7 +455,7 @@ const channelColor =
 
   </p>
 
-  <div className="h-[600px] flex items-center justify-center gap-3">
+  <div className="h-[520px] flex items-center justify-center gap-3">
 
     <div className="text-[8px] text-zinc-500 flex flex-col justify-between h-[520px] -ml-2">
 
@@ -432,7 +510,7 @@ const channelColor =
              BUS
             </p>
 
-            <div className="h-[600px] flex items-center justify-center gap-3">
+            <div className="h-[520px] flex items-center justify-center gap-3">
 
                 <div className="text-[8px] text-zinc-500 flex flex-col justify-between h-[520px] -ml-2">
 
