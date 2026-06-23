@@ -502,8 +502,8 @@ const channelColor =
 
           <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-3 h-full">
 
-            <h3 className="text-center text-sm font-semibold mb-4">
-             MASTER
+            <h3 className="text-center text-[13px] font-semibold mb-4 -ml-1">
+                MASTER
             </h3>
 
             <p className="text-center text-[10px] text-zinc-500 mb-4">
