@@ -14,13 +14,21 @@ export default function DAWPage() {
       "main"
     );
 
+    
+
     const isSendMode =
   inspectorView === "sends";
 
+const trackColor =
+  "#14D8C4";
+
+const sendColor =
+  "#FF6B4A";
+
 const channelColor =
   isSendMode
-    ? "#FF6B4A"
-    : "#14D8C4";
+    ? sendColor
+    : trackColor;
 
   const saveSession = () => {
     alert("Changes Saved");
@@ -75,7 +83,21 @@ const channelColor =
 
         {/* Session Bar */}
 
-        <div className="grid grid-cols-[1fr_1fr_1fr_2fr] gap-4 mb-6">
+        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_2fr] gap-4 mb-6">
+
+            <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
+
+  <p className="text-xs text-zinc-500">
+    Project
+  </p>
+
+  <p className="text-xl font-semibold truncate">
+    Coffee Test
+  </p>
+
+</div>
+
+
 
           <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
             <p className="text-xs text-zinc-500">
@@ -133,7 +155,7 @@ const channelColor =
 
         {/* Workspace */}
 
-        <div className="grid grid-cols-[180px_1fr_260px_90px_90px] gap-4">
+        <div className="grid grid-cols-[180px_1fr_220px_90px_70px] gap-4">
 
           {/* Tracks */}
 
@@ -150,7 +172,7 @@ const channelColor =
                 "Bass",
                 "Piano",
                 "Vocal",
-              ].map((track) => (
+              ].map((track, index) => (
 
                 <button
                   key={track}
@@ -166,12 +188,12 @@ const channelColor =
                     transition
                     ${
                       selectedTrack === track
-                        ? "border-[#14D8C4]"
+                        ? "border-[#14D8C4] bg-[#14D8C415]"
                         : "border-[#1F2937]"
                     }
                   `}
                 >
-                  {track}
+                  {index + 1}. {track}
                 </button>
 
               ))}
@@ -198,7 +220,7 @@ const channelColor =
 
               </div>
 
-              <div className="h-[350px] border border-dashed border-[#1F2937] rounded-xl flex items-center justify-center text-zinc-500">
+              <div className="h-[500px] border border-dashed border-[#1F2937] rounded-xl flex items-center justify-center text-zinc-500">
                 Timeline Coming Soon
               </div>
 
@@ -279,7 +301,7 @@ const channelColor =
   transition
   ${
     inspectorView === "sends"
-      ? "border-[#FF6B4A]"
+      ? "border-[#FF6B4A] bg-[#FF6B4A15]"
       : "border-[#1F2937]"
   }
 `}
@@ -336,7 +358,7 @@ const channelColor =
 
           {/* Channel Strip */}
 
-<div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-3">
+<div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-3 h-full">
 
   <h3
     className="text-center text-sm font-semibold mb-4"
@@ -355,66 +377,100 @@ const channelColor =
 
   </p>
 
-  <div className="h-[300px] flex justify-center">
+  <div className="h-[600px] flex items-center justify-center gap-3">
 
-    <div className="w-4 bg-[#1F2937] rounded-full relative">
+    <div className="text-[8px] text-zinc-500 flex flex-col justify-between h-[520px] -ml-2">
 
-      <div
-        className="absolute bottom-0 left-0 right-0 rounded-full"
-        style={{
-          height: "72%",
-          backgroundColor:
-            channelColor,
-        }}
-      />
+  <span>0</span>
+  <span>-6</span>
+  <span>-12</span>
+  <span>-18</span>
+  <span>-24</span>
+  <span>-30</span>
 
-    </div>
+</div>
 
-  </div>
+<div className="w-3 h-[520px] bg-[#1F2937] rounded-full relative">
 
-  <div className="mt-4 text-center">
+  <div
+    className="absolute bottom-0 left-0 right-0 rounded-full"
+    style={{
+      height: "72%",
+      backgroundColor: channelColor,
+    }}
+  />
 
-    <div
-      className="w-8 h-8 rounded-full mx-auto"
-      style={{
-        border:
-          `2px solid ${channelColor}`,
-      }}
-    />
+</div>
 
+<div className="w-5 h-[520px] relative">
+
+  <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-[#1F2937]" />
+
+  <div
+    className="absolute left-1/2 -translate-x-1/2 w-5 h-5 rounded-full"
+    style={{
+      bottom: "72%",
+      border: `2px solid ${channelColor}`,
+      backgroundColor: "#111827",
+    }}
+  />
+
+</div>
   </div>
 
 </div>
 
           {/* Master */}
 
-          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-4">
+          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-3 h-full">
 
-            <h3 className="text-center font-semibold mb-6">
-              Master
+            <h3 className="text-center text-sm font-semibold mb-4">
+             MASTER
             </h3>
 
-            <div className="h-[600px] flex items-center justify-center">
+            <p className="text-center text-[10px] text-zinc-500 mb-4">
+             BUS
+            </p>
 
-              <div className="w-10 h-[300px] bg-[#1F2937] rounded-full relative">
+            <div className="h-[600px] flex items-center justify-center gap-3">
 
-                <div
-                  className="
-                    absolute
-                    bottom-0
-                    left-0
-                    right-0
-                    rounded-full
-                  "
-                  style={{
-                    height: "65%",
-                    backgroundColor:
-                      "#14D8C4",
-                  }}
-                />
+                <div className="text-[8px] text-zinc-500 flex flex-col justify-between h-[520px] -ml-2">
 
-              </div>
+  <span>0</span>
+  <span>-6</span>
+  <span>-12</span>
+  <span>-18</span>
+  <span>-24</span>
+  <span>-30</span>
 
+</div>
+
+<div className="w-3 h-[520px] bg-[#1F2937] rounded-full relative">
+
+  <div
+    className="absolute bottom-0 left-0 right-0 rounded-full"
+    style={{
+      height: "72%",
+      backgroundColor: "#14D8C4",
+    }}
+  />
+
+</div>
+
+<div className="w-5 h-[520px] relative">
+
+  <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[2px] bg-[#1F2937]" />
+
+  <div
+    className="absolute left-1/2 -translate-x-1/2 w-5 h-5 rounded-full"
+    style={{
+      bottom: "72%",
+      border: "2px solid #14D8C4",
+      backgroundColor: "#111827",
+    }}
+  />
+
+</div>
             </div>
 
           </div>
