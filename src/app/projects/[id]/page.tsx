@@ -10,6 +10,8 @@ import {
 
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
+import { analyzeAudio }
+  from "@/intelligence/ears/audioAnalyzer";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -94,6 +96,74 @@ const [uploadedProgress, setUploadedProgress] =
   return `${mins}:${secs
     .toString()
     .padStart(2, "0")}`;
+};
+
+
+
+
+const runAudioAnalysis = async (
+  file: File,
+  projectId: string
+) => {
+
+  try {
+
+    console.log(
+      "[Aura Ears] Running Analysis"
+    );
+
+    const analysis =
+      await analyzeAudio(file);
+
+    console.log(
+      "[Aura Ears] Analysis Result",
+      analysis
+    );
+
+    const { error } =
+      await supabase
+        .from("projects")
+        .update({
+
+          tempo:
+            analysis.tempo,
+
+          time_signature:
+            analysis.timeSignature,
+
+          musical_key:
+            analysis.key,
+
+          scale:
+            analysis.scale,
+
+          sample_rate:
+            analysis.sampleRate,
+
+          bitrate:
+            analysis.bitrate,
+
+        })
+        .eq(
+          "id",
+          projectId
+        );
+
+    if (error) {
+      throw error;
+    }
+
+    console.log(
+      "[Aura Ears] Project Updated"
+    );
+
+  } catch (error) {
+
+    console.error(
+      "[Aura Ears] Analysis Failed",
+      error
+    );
+  }
 };
 
 
@@ -375,9 +445,17 @@ setUploadedProgress(0);
 setUploadedPlaying(false);
 
 
-    
-    loadProject();
-    return;
+    await runAudioAnalysis(
+  newFile,
+  project.id
+);
+
+await loadProject();
+
+return;
+
+
+
   }
 
   // STEMS PROJECT
