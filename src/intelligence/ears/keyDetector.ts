@@ -109,15 +109,6 @@ console.table(
     chroma
   );
 
-console.log(
-  "[Aura Ears] Tonic Index:",
-  tonicIndex
-);
-
-console.log(
-  "[Aura Ears] Tonic Note:",
-  NOTES[tonicIndex]
-);
 
 
 
@@ -126,11 +117,6 @@ const tonicData =
   detectTonicV2(
     chroma
   );
-
-console.log(
-  "[Aura Ears V2]",
-  tonicData
-);
 
 
 
@@ -156,17 +142,7 @@ for (const candidate of profiles) {
     score += 0.20;
   }
 
-  if (
-  candidate.key ===
-  NOTES[tonicIndex]
-) {
-  console.log(
-    "[Aura Ears]",
-    candidate.key,
-    candidate.scale,
-    score
-  );
-}
+  
 
   if (score > bestScore) {
 
@@ -183,20 +159,19 @@ console.log(
   bestMatch
 );
 
-console.log(
-  "[Aura Ears] Final Score:",
-  bestScore
-);
+
 
 
 
 
     return {
   key:
+    bestMatch?.key ??
     matchingScales[0]?.key ??
     null,
 
   scale:
+    bestMatch?.scale ??
     matchingScales[0]?.scale ??
     null,
 };
