@@ -4,11 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import {
-  getAudioMetadata,
-  detectTempo,
-  detectKey,
-} from "@/intelligence";
+import { analyzeAudio } from "@/intelligence/ears/audioAnalyzer";
 
 
 
@@ -78,183 +74,84 @@ export default function AIProjectPage() {
 
 
   const handleCreateProject = async () => {
-
-
-if (!audioType) {
-  alert("Please select Mix or Stems");
-  return;
-}
-
-if (files.length === 0) {
-  alert("Please select files");
-  return;
-}
-
-
-
-  try {
-    
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    
-
-    
-
-    if (!user) {
-      alert("No user found");
+    if (!audioType) {
+      alert("Please select Mix or Stems");
       return;
     }
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    if (files.length === 0) {
+      alert("Please select files");
+      return;
+    }
 
-    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
 
+      if (!user) {
+        alert("No user found");
+        return;
+      }
 
-    const uploadedFiles = await uploadFiles();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
 
-if (uploadedFiles.length === 0) {
-  return;
-}
+      // Step 1 — Upload files
+      const uploadedFiles = await uploadFiles();
+      if (uploadedFiles.length === 0) return;
 
+      // Step 2 — Create project record immediately
+      const { data, error } = await supabase
+        .from("projects")
+        .insert({
+          user_id: user.id,
+          name: projectName,
+          workflow: "ai_assisted",
+          genre,
+          audio_type: audioType,
+          project_prompt: creativeDirection,
+          status: "processing",
+          progress: 20,
+          current_task: "Upload Complete — Starting Analysis",
+          processing_stage: "uploaded",
+          expires_at: expiresAt.toISOString(),
+        })
+        .select();
 
+      if (error) {
+        alert(error.message);
+        return;
+      }
 
-const metadata = await getAudioMetadata(files[0]);
+      const projectId = data[0].id;
 
-const tempoResult =
-  await detectTempo(
-    files[0]
-  );
+      // Step 3 — Save file records
+      const fileRows = uploadedFiles.map((file) => ({
+        project_id: projectId,
+        user_id: user.id,
+        file_name: file.file_name,
+        file_path: file.file_path,
+        file_type: file.file_type,
+      }));
 
-  const keyResult =
-  await detectKey(
-    files[0]
-  );
+      const { error: fileError } = await supabase
+        .from("project_files")
+        .insert(fileRows);
 
-const musicalKey =
-  keyResult.key;
+      if (fileError) {
+        console.error(fileError);
+        alert(fileError.message);
+        return;
+      }
 
-const scale =
-  keyResult.scale;
+      // Step 4 — Navigate to project page
+      // Analysis will run automatically on the project page
+      router.push(`/projects/${projectId}`);
 
-console.log(
-  "Key Result:",
-  keyResult
-);
-
-
-const tempo =
-  tempoResult.tempo;
-
-const timeSignature =
-  tempoResult.timeSignature;
-
-console.log(
-  "Tempo Result:",
-  tempoResult
-);
-
-console.log("tempo =", tempo);
-console.log("typeof tempo =", typeof tempo);
-console.log("timeSignature =", timeSignature);
-
-const duration = metadata.duration || 0;
-
-const mins = Math.floor(
-  duration / 60
-);
-
-const secs = Math.floor(
-  duration % 60
-);
-
-const durationText =
-  `${mins}:${secs
-    .toString()
-    .padStart(2, "0")}`;
-
-
-console.log("INSERT VALUES", {
-  duration: durationText,
-  sample_rate: metadata.sampleRate,
-  bitrate: metadata.bitrate
-  ? Math.round(metadata.bitrate)
-  : null,
-  codec: metadata.codec,
-  tempo,
-  timeSignature,
-  musicalKey,
-  scale,
-});
-
-
-    const { data, error } = await supabase
-      .from("projects")
-
-      
-      .insert({
-  user_id: user.id,
-  name: projectName,
-  workflow: "ai_assisted",
-  genre,
-  audio_type: audioType,
-
-  duration: durationText,
-  sample_rate: metadata.sampleRate,
-  bitrate: metadata.bitrate,
-  codec: metadata.codec,
-  tempo: tempo,
-  time_signature: timeSignature,
-  musical_key: musicalKey,
-  scale: scale,
-  project_prompt: creativeDirection,
-  status: "processing",
-  progress: 15,
-  current_task: "Waiting For AI Processing",
-  processing_stage: "uploaded",
-  expires_at: expiresAt.toISOString(),
-})
-      .select();
-
-    
-
-    if (error) {
-  alert(error.message);
-  return;
-}
-
-const projectId = data[0].id;
-
-const fileRows = uploadedFiles.map((file) => ({
-  project_id: projectId,
-  user_id: user.id,
-  file_name: file.file_name,
-  file_path: file.file_path,
-  file_type: file.file_type,
-}));
-
-const { error: fileError } = await supabase
-  .from("project_files")
-  .insert(fileRows);
-
-if (fileError) {
-  console.error(fileError);
-  alert(fileError.message);
-  return;
-}
-
-
-
-router.push(`/projects/${projectId}`);
-  } catch (err) {
-    console.error(err);
-    alert("CHECK CONSOLE");
-  }
-};
+    } catch (err) {
+      console.error(err);
+      alert("CHECK CONSOLE");
+    }
+  };
 
 
 

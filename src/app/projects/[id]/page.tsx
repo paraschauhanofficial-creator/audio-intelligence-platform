@@ -10,8 +10,8 @@ import {
 
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
-import { analyzeAudio }
-  from "@/intelligence/ears/audioAnalyzer";
+import { analyzeAudio } from "@/intelligence/ears/audioAnalyzer";
+import { auraMaster } from "@/intelligence/master/auraMaster";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -52,12 +52,57 @@ const [uploadedPlaying, setUploadedPlaying] =
 const [uploadedProgress, setUploadedProgress] =
   useState(0);
 
+const analysisRunning = useRef(false);
+
+const masterWaveformRef = useRef<HTMLDivElement>(null);
+const masterWavesurferRef = useRef<any>(null);
+const [masterPlaying, setMasterPlaying] = useState(false);
+const [masterCurrentTime, setMasterCurrentTime] = useState("0:00");
+const [masterDuration, setMasterDuration] = useState("0:00");
+
   const fileInputRef =
   useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadProject();
   }, []);
+
+  useEffect(() => {
+    // Auto-trigger analysis if project was just uploaded
+    // and analysis hasn't been run yet (no integrated_lufs means not analysed)
+    if (
+      project &&
+      files.length > 0 &&
+      project.processing_stage === "uploaded" &&
+      project.integrated_lufs === null &&
+      project.audio_type === "mix" &&
+      !analysisRunning.current
+    ) {
+      analysisRunning.current = true;
+      // Download the file from Supabase storage and run analysis
+      const triggerAnalysis = async () => {
+        const { data, error } = await supabase.storage
+          .from("project-files")
+          .createSignedUrl(files[0].file_path, 3600);
+
+        if (error || !data) {
+          console.error("[Aura Ears] Could not get file URL", error);
+          return;
+        }
+
+        // Fetch the file as a File object
+        const response = await fetch(data.signedUrl);
+        const blob = await response.blob();
+        const file = new File([blob], files[0].file_name, {
+          type: files[0].file_type,
+        });
+
+        await runAudioAnalysis(file, project.id);
+      };
+
+      triggerAnalysis();
+    }
+  }, [project, files]);
 
   
 
@@ -70,21 +115,30 @@ const [uploadedProgress, setUploadedProgress] =
   ) {
     return;
   }
-
-
-
-
-
   loadWaveform();
-
- 
-
   return () => {
     if (wavesurferRef.current) {
       wavesurferRef.current.destroy();
     }
   };
 }, [files, project]);
+
+  useEffect(() => {
+    if (
+      !project?.master_file_path ||
+      !masterWaveformRef.current
+    ) {
+      return;
+    }
+
+    loadMasterWaveform();
+
+    return () => {
+      if (masterWavesurferRef.current) {
+        masterWavesurferRef.current.destroy();
+      }
+    };
+  }, [project?.master_file_path]);
 
 
 
@@ -101,68 +155,133 @@ const [uploadedProgress, setUploadedProgress] =
 
 
 
+const runMastering = async (
+  file: File,
+  projectId: string
+) => {
+  try {
+    // Update progress — mastering started
+    await supabase
+      .from("projects")
+      .update({
+        progress: 50,
+        current_task: "Mastering Audio...",
+        processing_stage: "mastering",
+      })
+      .eq("id", projectId);
+
+    await loadProject();
+
+    console.log("[Aura Master] Starting...");
+    const result = await auraMaster(file);
+    console.log("[Aura Master] Complete", result);
+
+    // Upload master WAV to Supabase Storage
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const masterPath = `${user.id}/masters/${projectId}-master.wav`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("project-files")
+      .upload(masterPath, result.masterBlob, {
+        contentType: "audio/wav",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error("[Aura Master] Upload failed", uploadError);
+      return;
+    }
+
+    console.log("[Aura Master] Master uploaded to", uploadData.path);
+
+    // Save master metrics and file path
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        progress: 80,
+        current_task: "Master Ready",
+        processing_stage: "mastered",
+        status: "processing",
+        master_file_path: uploadData.path,
+        master_lufs: result.lufs,
+        master_true_peak: result.truePeak,
+        master_dynamic_range: result.dynamicRange,
+        master_rms: result.rms,
+      })
+      .eq("id", projectId);
+
+    if (error) throw error;
+
+    console.log("[Aura Master] Project updated with master data");
+
+    await loadProject();
+
+  } catch (error) {
+    console.error("[Aura Master] Mastering Failed", error);
+  }
+};
+
+
+
+
 const runAudioAnalysis = async (
   file: File,
   projectId: string
 ) => {
-
   try {
+    // Step 1 — Mark analysis started
+    await supabase
+      .from("projects")
+      .update({
+        progress: 25,
+        current_task: "Analysing Audio...",
+        processing_stage: "analysing",
+      })
+      .eq("id", projectId);
 
-    console.log(
-      "[Aura Ears] Running Analysis"
-    );
+    console.log("[Aura Ears] Running Analysis");
+    const analysis = await analyzeAudio(file);
+    console.log("[Aura Ears] Analysis Result", analysis);
 
-    const analysis =
-      await analyzeAudio(file);
+    // Step 2 — Save all analysis results
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        progress: 40,
+        current_task: "Analysis Complete",
+        processing_stage: "analysed",
+        status: "processing",
 
-    console.log(
-      "[Aura Ears] Analysis Result",
-      analysis
-    );
+        tempo: analysis.tempo,
+        time_signature: analysis.timeSignature,
+        musical_key: analysis.key,
+        scale: analysis.scale,
+        sample_rate: analysis.sampleRate,
+        bitrate: analysis.bitrate,
+        integrated_lufs: analysis.integratedLUFS,
+        short_term_lufs: analysis.shortTermLUFS,
+        momentary_lufs: analysis.momentaryLUFS,
+        loudness_range: analysis.loudnessRange,
+        true_peak: analysis.truePeak,
+        sample_peak: analysis.samplePeak,
+        average_peak: analysis.averagePeak,
+        rms: analysis.rms,
+        crest_factor: analysis.crestFactor,
+        dynamic_range: analysis.dynamicRange,
+      })
+      .eq("id", projectId);
 
-    const { error } =
-      await supabase
-        .from("projects")
-        .update({
+    if (error) throw error;
 
-          tempo:
-            analysis.tempo,
+    console.log("[Aura Ears] Project Updated");
 
-          time_signature:
-            analysis.timeSignature,
-
-          musical_key:
-            analysis.key,
-
-          scale:
-            analysis.scale,
-
-          sample_rate:
-            analysis.sampleRate,
-
-          bitrate:
-            analysis.bitrate,
-
-        })
-        .eq(
-          "id",
-          projectId
-        );
-
-    if (error) {
-      throw error;
-    }
-
-    console.log(
-      "[Aura Ears] Project Updated"
-    );
+    // Step 3 — Run mastering engine
+    await runMastering(file, projectId);
 
   } catch (error) {
-
-    console.error(
-      "[Aura Ears] Analysis Failed",
-      error
-    );
+    console.error("[Aura Ears] Analysis Failed", error);
   }
 };
 
@@ -255,7 +374,64 @@ wavesurferRef.current.on(
 
 
 
-  const loadProject = async () => {
+  const loadMasterWaveform = async () => {
+  if (!project?.master_file_path) return;
+
+  try {
+    const { data, error } = await supabase.storage
+      .from("project-files")
+      .createSignedUrl(project.master_file_path, 3600);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    if (masterWavesurferRef.current) {
+      masterWavesurferRef.current.destroy();
+    }
+
+    masterWavesurferRef.current = WaveSurfer.create({
+      container: masterWaveformRef.current!,
+      waveColor: "#3a2a00",
+      progressColor: "#F0A500",
+      cursorColor: "#F0A500",
+      height: 80,
+      barWidth: 2,
+      barGap: 1,
+    });
+
+    masterWavesurferRef.current.on("ready", () => {
+      setMasterDuration(
+        formatTime(masterWavesurferRef.current.getDuration())
+      );
+    });
+
+    masterWavesurferRef.current.on("timeupdate", () => {
+      setMasterCurrentTime(
+        formatTime(masterWavesurferRef.current.getCurrentTime())
+      );
+    });
+
+    masterWavesurferRef.current.on("play", () => setMasterPlaying(true));
+    masterWavesurferRef.current.on("pause", () => setMasterPlaying(false));
+
+    try {
+      await masterWavesurferRef.current.load(data.signedUrl);
+    } catch (err: any) {
+      if (err?.name !== "AbortError") {
+        console.error(err);
+      }
+    }
+
+  } catch (err: any) {
+    if (err?.name !== "AbortError") {
+      console.error(err);
+    }
+  }
+};
+
+const loadProject = async () => {
 
     
     const { data, error } = await supabase
@@ -1315,85 +1491,145 @@ style={{
     Audio Preview
   </h3>
 
+  {/* Original Mix */}
   {project.audio_type === "mix" && (
-
     <div className="mb-6">
 
+      {/* Header row with metrics */}
       <div className="flex items-center justify-between mb-3">
+        <h4 className="font-medium">Original Mix</h4>
 
-        <h4 className="font-medium">
-          Original Mix
-        </h4>
-
-        <span className="text-xs text-zinc-500">
-          Source Audio
-        </span>
-
+        <div className="flex items-center gap-4">
+          <div className="text-center">
+            <p className="text-[9px] text-zinc-500 uppercase mb-0.5">LUFS</p>
+            <p className="text-sm font-semibold" style={{ color: accentColor }}>
+              {project.integrated_lufs != null
+                ? `${project.integrated_lufs.toFixed(1)}`
+                : "--"}
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-[9px] text-zinc-500 uppercase mb-0.5">True Peak</p>
+            <p className="text-sm font-semibold" style={{ color: accentColor }}>
+              {project.true_peak != null
+                ? `${project.true_peak.toFixed(1)} dB`
+                : "--"}
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-[9px] text-zinc-500 uppercase mb-0.5">DR</p>
+            <p className="text-sm font-semibold" style={{ color: accentColor }}>
+              {project.dynamic_range != null
+                ? `${project.dynamic_range.toFixed(1)}`
+                : "--"}
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-[9px] text-zinc-500 uppercase mb-0.5">RMS</p>
+            <p className="text-sm font-semibold" style={{ color: accentColor }}>
+              {project.rms != null
+                ? `${project.rms.toFixed(1)}`
+                : "--"}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="border border-[#1F2937] rounded-xl p-6">
+        <div ref={waveformRef} className="w-full min-h-[140px]" />
 
-  <div
-    ref={waveformRef}
-    className="w-full min-h-[140px]"
-  />
+        <div className="flex items-center justify-between mt-4">
+          <button
+            onClick={() => wavesurferRef.current?.playPause()}
+            className="h-10 w-10 rounded-full flex items-center justify-center text-black font-bold hover:scale-105 transition"
+            style={{
+              backgroundColor: accentColor,
+              boxShadow: `0 0 12px ${accentColor}`,
+            }}
+          >
+            {isPlaying ? "❚❚" : "▶"}
+          </button>
 
-  <div className="flex items-center justify-between mt-4">
-
-    <button
-  onClick={() =>
-    wavesurferRef.current?.playPause()
-  }
-  className="
-    h-10
-    w-10
-    rounded-full
-    flex
-    items-center
-    justify-center
-    text-black
-    font-bold
-    hover:scale-105
-    transition
-  "
-  style={{
-    backgroundColor: accentColor,
-    boxShadow: `0 0 12px ${accentColor}`,
-  }}
->
-  {isPlaying ? "❚❚" : "▶"}
-</button>
-
-    <span className="text-sm text-zinc-400">
-      {currentTime} / {duration}
-    </span>
-
-  </div>
-
-</div>
-
+          <span className="text-sm text-zinc-400">
+            {currentTime} / {duration}
+          </span>
+        </div>
+      </div>
     </div>
-
   )}
 
+  {/* AI Assisted Master */}
   <div>
-
     <div className="flex items-center justify-between mb-3">
+      <h4 className="font-medium">AI Assisted Master</h4>
 
-      <h4 className="font-medium">
-        AI Assisted Master
-      </h4>
-
-      <span className="text-xs text-zinc-500">
-        Processed Output
-      </span>
-
+      <div className="flex items-center gap-4">
+        <div className="text-center">
+          <p className="text-[9px] text-zinc-500 uppercase mb-0.5">LUFS</p>
+          <p className="text-sm font-semibold" style={{ color: "#F0A500" }}>
+            {project.master_lufs != null
+              ? `${project.master_lufs.toFixed(1)}`
+              : "--"}
+          </p>
+        </div>
+        <div className="text-center">
+          <p className="text-[9px] text-zinc-500 uppercase mb-0.5">True Peak</p>
+          <p className="text-sm font-semibold" style={{ color: "#F0A500" }}>
+            {project.master_true_peak != null
+              ? `${project.master_true_peak.toFixed(1)} dB`
+              : "--"}
+          </p>
+        </div>
+        <div className="text-center">
+          <p className="text-[9px] text-zinc-500 uppercase mb-0.5">DR</p>
+          <p className="text-sm font-semibold" style={{ color: "#F0A500" }}>
+            {project.master_dynamic_range != null
+              ? `${project.master_dynamic_range.toFixed(1)}`
+              : "--"}
+          </p>
+        </div>
+        <div className="text-center">
+          <p className="text-[9px] text-zinc-500 uppercase mb-0.5">RMS</p>
+          <p className="text-sm font-semibold" style={{ color: "#F0A500" }}>
+            {project.master_rms != null
+              ? `${project.master_rms.toFixed(1)}`
+              : "--"}
+          </p>
+        </div>
+      </div>
     </div>
 
-    <div className="h-24 rounded-xl border border-[#1F2937] flex items-center justify-center text-zinc-500">
-      Processing Not Complete
-    </div>
+    {project.master_file_path ? (
+      <div className="border border-[#1F2937] rounded-xl p-6">
+        <div
+          ref={masterWaveformRef}
+          className="w-full min-h-[140px]"
+        />
 
+        <div className="flex items-center justify-between mt-4">
+          <button
+            onClick={() =>
+              masterWavesurferRef.current?.playPause()
+            }
+            className="h-10 w-10 rounded-full flex items-center justify-center text-black font-bold hover:scale-105 transition"
+            style={{
+              backgroundColor: "#F0A500",
+              boxShadow: `0 0 12px #F0A500`,
+            }}
+          >
+            {masterPlaying ? "❚❚" : "▶"}
+          </button>
+
+          <span className="text-sm text-zinc-400">
+            {masterCurrentTime} / {masterDuration}
+          </span>
+        </div>
+      </div>
+    ) : (
+      <div className="h-24 rounded-xl border border-[#1F2937] flex items-center justify-center text-zinc-500">
+        Processing Not Complete
+      </div>
+    )}
   </div>
 
 </div>
@@ -1419,78 +1655,80 @@ style={{
           backgroundColor: `${accentColor}20`,
           color: accentColor,
      }}>
-      Coming Soon
+      {project.master_file_path ? "Ready" : "Processing"}
     </span>
 
   </div>
 
   <p className="text-zinc-400 mb-6">
-    AI-generated files will appear here when processing is complete.
+    {project.master_file_path
+      ? "Your AI mastered files are ready to download."
+      : "AI-generated files will appear here when processing is complete."}
   </p>
 
   <div className="space-y-3">
 
-    <div className="border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between opacity-50">
-
+    {/* Master WAV */}
+    <div className={`border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between ${!project.master_file_path ? "opacity-50" : ""}`}>
       <div>
-        <p className="font-medium">
-          Master WAV
-        </p>
-
-        <p className="text-xs text-zinc-500">
-          High Quality Export
-        </p>
+        <p className="font-medium">Master WAV</p>
+        <p className="text-xs text-zinc-500">High Quality Export</p>
       </div>
 
       <button
-        disabled
-        className="px-3 py-1 rounded-lg bg-[#1F2937] text-zinc-500 text-sm"
+        disabled={!project.master_file_path}
+        onClick={async () => {
+          if (!project.master_file_path) return;
+          const { data, error } = await supabase.storage
+            .from("project-files")
+            .createSignedUrl(project.master_file_path, 60);
+          if (error || !data) return;
+
+          // Fetch as blob to force download instead of browser open
+          const response = await fetch(data.signedUrl);
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${project.name}-master.wav`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }}
+        className="px-3 py-1 rounded-lg text-sm font-semibold"
+        style={project.master_file_path ? {
+          backgroundColor: accentColor,
+          color: "#000",
+        } : {
+          backgroundColor: "#1F2937",
+          color: "#6b7280",
+        }}
       >
         Download
       </button>
-
     </div>
 
+    {/* Master MP3 — coming soon */}
     <div className="border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between opacity-50">
-
       <div>
-        <p className="font-medium">
-          Master MP3
-        </p>
-
-        <p className="text-xs text-zinc-500">
-          Streaming Ready
-        </p>
+        <p className="font-medium">Master MP3</p>
+        <p className="text-xs text-zinc-500">Streaming Ready — Coming Soon</p>
       </div>
-
-      <button
-        disabled
-        className="px-3 py-1 rounded-lg bg-[#1F2937] text-zinc-500 text-sm"
-      >
+      <button disabled className="px-3 py-1 rounded-lg bg-[#1F2937] text-zinc-500 text-sm">
         Download
       </button>
-
     </div>
 
+    {/* Instrumental WAV — coming soon */}
     <div className="border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between opacity-50">
-
       <div>
-        <p className="font-medium">
-          Instrumental WAV
-        </p>
-
-        <p className="text-xs text-zinc-500">
-          Optional Export
-        </p>
+        <p className="font-medium">Instrumental WAV</p>
+        <p className="text-xs text-zinc-500">Optional Export — Coming Soon</p>
       </div>
-
-      <button
-        disabled
-        className="px-3 py-1 rounded-lg bg-[#1F2937] text-zinc-500 text-sm"
-      >
+      <button disabled className="px-3 py-1 rounded-lg bg-[#1F2937] text-zinc-500 text-sm">
         Download
       </button>
-
     </div>
 
   </div>
