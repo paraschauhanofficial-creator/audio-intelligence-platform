@@ -1,4 +1,5 @@
 import { detectLUFS } from "../ears/lufsDetector";
+
 import { detectPeaks } from "../ears/peakDetector";
 import { analyzeDynamics } from "../ears/dynamicAnalyzer";
 
@@ -288,6 +289,58 @@ function applyLimiter(
   }
 
   return output;
+}
+
+// MP3 encoding using MediaRecorder API (built into browser, no library needed)
+export async function encodeMp3(audioBuffer: AudioBuffer): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    try {
+      const audioContext = new AudioContext({
+        sampleRate: audioBuffer.sampleRate,
+      });
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+
+      const destination = audioContext.createMediaStreamDestination();
+      source.connect(destination);
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "audio/ogg";
+
+      const recorder = new MediaRecorder(destination.stream, {
+        mimeType,
+        audioBitsPerSecond: 320000,
+      });
+
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        resolve(new Blob(chunks, { type: "audio/mpeg" }));
+        audioContext.close();
+      };
+
+      recorder.onerror = reject;
+
+      recorder.start(100);
+      source.start(0);
+
+      setTimeout(() => {
+        recorder.stop();
+        source.stop();
+      }, (audioBuffer.duration + 0.5) * 1000);
+
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
 
 // WAV encoder

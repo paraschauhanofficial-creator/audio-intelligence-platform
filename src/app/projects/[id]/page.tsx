@@ -11,7 +11,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
 import { analyzeAudio } from "@/intelligence/ears/audioAnalyzer";
-import { auraMaster } from "@/intelligence/master/auraMaster";
+import { auraMaster, encodeMp3 } from "@/intelligence/master/auraMaster";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -200,10 +200,10 @@ const runMastering = async (
     const { error } = await supabase
       .from("projects")
       .update({
-        progress: 80,
-        current_task: "Master Ready",
-        processing_stage: "mastered",
-        status: "processing",
+        progress: 100,
+        current_task: "Export Ready",
+        processing_stage: "completed",
+        status: "completed",
         master_file_path: uploadData.path,
         master_lufs: result.lufs,
         master_true_peak: result.truePeak,
@@ -1710,12 +1710,45 @@ style={{
     </div>
 
     {/* Master MP3 — coming soon */}
-    <div className="border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between opacity-50">
+    <div className={`border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between ${!project.master_file_path ? "opacity-50" : ""}`}>
       <div>
         <p className="font-medium">Master MP3</p>
-        <p className="text-xs text-zinc-500">Streaming Ready — Coming Soon</p>
+        <p className="text-xs text-zinc-500">Streaming Ready — 320kbps</p>
       </div>
-      <button disabled className="px-3 py-1 rounded-lg bg-[#1F2937] text-zinc-500 text-sm">
+      <button
+        disabled={!project.master_file_path}
+        onClick={async () => {
+          if (!project.master_file_path) return;
+          const { data, error } = await supabase.storage
+            .from("project-files")
+            .createSignedUrl(project.master_file_path, 60);
+          if (error || !data) return;
+
+          // Fetch the master WAV and re-encode as MP3
+          const response = await fetch(data.signedUrl);
+          const arrayBuffer = await response.arrayBuffer();
+          const audioContext = new AudioContext();
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          const mp3Blob = await encodeMp3(audioBuffer);
+
+          const url = URL.createObjectURL(mp3Blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${project.name}-master.mp3`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }}
+        className="px-3 py-1 rounded-lg text-sm font-semibold"
+        style={project.master_file_path ? {
+          backgroundColor: accentColor,
+          color: "#000",
+        } : {
+          backgroundColor: "#1F2937",
+          color: "#6b7280",
+        }}
+      >
         Download
       </button>
     </div>
