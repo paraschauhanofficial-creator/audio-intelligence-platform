@@ -180,13 +180,13 @@ const runMastering = async (
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const masterPath = `${user.id}/masters/${projectId}-master.wav`;
+    const masterPath = `${user.id}/masters/${projectId}-${Date.now()}-master.wav`;
 
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from("project-files")
       .upload(masterPath, result.masterBlob, {
         contentType: "audio/wav",
-        upsert: true,
+        upsert: false,
       });
 
     if (uploadError) {
@@ -209,6 +209,14 @@ const runMastering = async (
         master_true_peak: result.truePeak,
         master_dynamic_range: result.dynamicRange,
         master_rms: result.rms,
+        master_freq_sub: result.freqSub,
+        master_freq_bass: result.freqBass,
+        master_freq_low_mid: result.freqLowMid,
+        master_freq_mid: result.freqMid,
+        master_freq_high_mid: result.freqHighMid,
+        master_freq_air: result.freqAir,
+        master_stereo_correlation: result.stereoCorrelation,
+        master_stereo_width: result.stereoWidth,
       })
       .eq("id", projectId);
 
@@ -270,6 +278,18 @@ const runAudioAnalysis = async (
         rms: analysis.rms,
         crest_factor: analysis.crestFactor,
         dynamic_range: analysis.dynamicRange,
+
+        // Frequency analysis
+        freq_sub: analysis.sub,
+        freq_bass: analysis.bass,
+        freq_low_mid: analysis.lowMid,
+        freq_mid: analysis.mid,
+        freq_high_mid: analysis.highMid,
+        freq_air: analysis.air,
+
+        // Stereo analysis
+        stereo_correlation: analysis.correlation,
+        stereo_width: analysis.stereoWidth,
       })
       .eq("id", projectId);
 
@@ -620,14 +640,54 @@ setUploadedPreviewName("");
 setUploadedProgress(0);
 setUploadedPlaying(false);
 
+// Delete old master WAV from storage if exists
+if (project.master_file_path) {
+  await supabase.storage
+    .from("project-files")
+    .remove([project.master_file_path]);
+}
 
-    await runAudioAnalysis(
-  newFile,
-  project.id
-);
+// Reset master data so fresh analysis + mastering runs cleanly
+await supabase
+  .from("projects")
+  .update({
+    progress: 20,
+    current_task: "Upload Complete — Starting Analysis",
+    processing_stage: "uploaded",
+    status: "processing",
+    integrated_lufs: null,
+    master_file_path: null,
+    master_lufs: null,
+    master_true_peak: null,
+    master_dynamic_range: null,
+    master_rms: null,
+    master_freq_sub: null,
+    master_freq_bass: null,
+    master_freq_low_mid: null,
+    master_freq_mid: null,
+    master_freq_high_mid: null,
+    master_freq_air: null,
+    master_stereo_correlation: null,
+    master_stereo_width: null,
+    freq_sub: null,
+    freq_bass: null,
+    freq_low_mid: null,
+    freq_mid: null,
+    freq_high_mid: null,
+    freq_air: null,
+    stereo_correlation: null,
+    stereo_width: null,
+  })
+  .eq("id", project.id);
 
+// Reset analysisRunning so it can trigger again
+analysisRunning.current = false;
+
+// Reload immediately so UI shows reset state before analysis starts
 await loadProject();
 
+await runAudioAnalysis(newFile, project.id);
+await loadProject();
 return;
 
 
@@ -1481,6 +1541,403 @@ style={{
 
 
 
+  </div>
+
+</div>
+
+{/* Frequency & Stereo Analysis Cards */}
+<div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-6 mb-6">
+
+  {/* Frequency Spectrum Analysis */}
+  <div className="bg-[#111827] border border-[#1F2937] rounded-2xl overflow-hidden">
+    <div className="flex items-center justify-between mb-4 px-6 pt-6">
+      <h3 className="text-xl font-semibold">Frequency Spectrum</h3>
+      <div className="flex items-center gap-4 pr-6">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-0.5 rounded-full" style={{ backgroundColor: accentColor }} />
+              <span className="text-[10px] text-zinc-500">Original Mix</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-0.5 rounded-full" style={{ backgroundColor: "#F0A500" }} />
+              <span className="text-[10px] text-zinc-500">AI Master</span>
+            </div>
+          </div>
+    </div>
+
+    {(() => {
+      const bands = [
+        { label: "Sub",     freq: "40Hz",   mixKey: "freq_sub",      masterKey: "master_freq_sub"      },
+        { label: "Bass",    freq: "130Hz",  mixKey: "freq_bass",     masterKey: "master_freq_bass"     },
+        { label: "Low Mid", freq: "350Hz",  mixKey: "freq_low_mid",  masterKey: "master_freq_low_mid"  },
+        { label: "Mid",     freq: "1kHz",   mixKey: "freq_mid",      masterKey: "master_freq_mid"      },
+        { label: "High Mid",freq: "4kHz",   mixKey: "freq_high_mid", masterKey: "master_freq_high_mid" },
+        { label: "Air",     freq: "13kHz",  mixKey: "freq_air",      masterKey: "master_freq_air"      },
+      ];
+
+      const W = 600;
+      const H = 260;
+      const PAD = { top: 16, right: 16, bottom: 32, left: 40 };
+      const innerW = W - PAD.left - PAD.right;
+      const innerH = H - PAD.top - PAD.bottom;
+
+      const mixVals = bands.map(b => project[b.mixKey] as number | null);
+      const masterVals = bands.map(b => project[b.masterKey] as number | null);
+      const allVals = [...mixVals, ...masterVals].filter(v => v != null) as number[];
+
+      const hasData = allVals.length > 0;
+      const minDb = hasData ? Math.floor(Math.min(...allVals) - 5) : -80;
+      const maxDb = hasData ? Math.ceil(Math.max(...allVals) + 5) : 0;
+      const dbRange = maxDb - minDb || 1;
+
+      // Map band index to X position (evenly spaced on log-like scale)
+      const xPos = (i: number) => PAD.left + (i / (bands.length - 1)) * innerW;
+      // Map dB value to Y position
+      const yPos = (db: number) => PAD.top + ((maxDb - db) / dbRange) * innerH;
+
+      // Build smooth SVG path using cubic bezier
+      const buildPath = (vals: (number | null)[]) => {
+        const points = vals
+          .map((v, i) => v != null ? { x: xPos(i), y: yPos(v) } : null)
+          .filter(Boolean) as { x: number; y: number }[];
+
+        if (points.length < 2) return "";
+
+        let d = `M ${points[0].x} ${points[0].y}`;
+        for (let i = 0; i < points.length - 1; i++) {
+          const p0 = points[i];
+          const p1 = points[i + 1];
+          const cpx = (p0.x + p1.x) / 2;
+          d += ` C ${cpx} ${p0.y}, ${cpx} ${p1.y}, ${p1.x} ${p1.y}`;
+        }
+        return d;
+      };
+
+      // Build filled area path (close to bottom)
+      const buildArea = (vals: (number | null)[]) => {
+        const points = vals
+          .map((v, i) => v != null ? { x: xPos(i), y: yPos(v) } : null)
+          .filter(Boolean) as { x: number; y: number }[];
+
+        if (points.length < 2) return "";
+
+        let d = `M ${points[0].x} ${PAD.top + innerH}`;
+        d += ` L ${points[0].x} ${points[0].y}`;
+        for (let i = 0; i < points.length - 1; i++) {
+          const p0 = points[i];
+          const p1 = points[i + 1];
+          const cpx = (p0.x + p1.x) / 2;
+          d += ` C ${cpx} ${p0.y}, ${cpx} ${p1.y}, ${p1.x} ${p1.y}`;
+        }
+        d += ` L ${points[points.length - 1].x} ${PAD.top + innerH} Z`;
+        return d;
+      };
+
+      const mixPath = buildPath(mixVals);
+      const masterPath = buildPath(masterVals);
+      const mixArea = buildArea(mixVals);
+      const masterArea = buildArea(masterVals);
+
+      // dB grid lines
+      const dbSteps = [];
+      const step = Math.ceil(dbRange / 4);
+      for (let db = Math.ceil(minDb / step) * step; db <= maxDb; db += step) {
+        dbSteps.push(db);
+      }
+
+      return (
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="w-full"
+          style={{ background: "#0A0A0A", borderRadius: "12px" }}
+        >
+          {/* dB grid lines */}
+          {dbSteps.map(db => (
+            <g key={db}>
+              <line
+                x1={PAD.left} y1={yPos(db)}
+                x2={PAD.left + innerW} y2={yPos(db)}
+                stroke="#1F2937" strokeWidth="0.5"
+              />
+              <text
+                x={PAD.left - 4} y={yPos(db) + 3}
+                textAnchor="end" fontSize="9" fill="#4B5563"
+              >
+                {db}
+              </text>
+            </g>
+          ))}
+
+          {/* Frequency labels on X axis */}
+          {bands.map((b, i) => (
+            <text
+              key={b.label}
+              x={xPos(i)} y={H - 6}
+              textAnchor="middle" fontSize="9" fill="#4B5563"
+            >
+              {b.freq}
+            </text>
+          ))}
+
+          {/* Vertical band dividers */}
+          {bands.map((_, i) => (
+            <line
+              key={i}
+              x1={xPos(i)} y1={PAD.top}
+              x2={xPos(i)} y2={PAD.top + innerH}
+              stroke="#1F2937" strokeWidth="0.5"
+            />
+          ))}
+
+          {/* Mix area fill */}
+          {mixArea && (
+            <path
+              d={mixArea}
+              fill={accentColor}
+              fillOpacity="0.08"
+            />
+          )}
+
+          {/* Master area fill */}
+          {masterArea && (
+            <path
+              d={masterArea}
+              fill="#F0A500"
+              fillOpacity="0.08"
+            />
+          )}
+
+          {/* Mix curve */}
+          {mixPath && (
+            <path
+              d={mixPath}
+              fill="none"
+              stroke={accentColor}
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          )}
+
+          {/* Master curve */}
+          {masterPath && (
+            <path
+              d={masterPath}
+              fill="none"
+              stroke="#F0A500"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          )}
+
+          {/* Data points — mix */}
+          {mixVals.map((v, i) => v != null && (
+            <circle
+              key={i}
+              cx={xPos(i)} cy={yPos(v)}
+              r="3" fill={accentColor}
+            />
+          ))}
+
+          {/* Data points — master */}
+          {masterVals.map((v, i) => v != null && (
+            <circle
+              key={i}
+              cx={xPos(i)} cy={yPos(v)}
+              r="3" fill="#F0A500"
+            />
+          ))}
+
+          {/* No data placeholder */}
+          {!hasData && (
+            <text
+              x={W / 2} y={H / 2}
+              textAnchor="middle" fontSize="12" fill="#4B5563"
+            >
+              Analysing...
+            </text>
+          )}
+        </svg>
+      );
+    })()}
+  </div>
+
+  {/* Stereo Analysis — square card with Lissajous */}
+  <div
+    className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6"
+    style={{ aspectRatio: "1 / 1" }}
+  >
+    <div className="flex items-center justify-between mb-4">
+      <h3 className="text-xl font-semibold">Stereo</h3>
+      <div className="flex items-center gap-3">
+        <div className="text-right">
+          <p className="text-[10px] text-zinc-500 uppercase">Mix Width</p>
+          <p className="text-sm font-semibold" style={{ color: accentColor }}>
+            {project.stereo_width != null ? `${project.stereo_width.toFixed(1)}%` : "--"}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] text-zinc-500 uppercase">Master Width</p>
+          <p className="text-sm font-semibold" style={{ color: "#F0A500" }}>
+            {project.master_stereo_width != null ? `${project.master_stereo_width.toFixed(1)}%` : "--"}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {/* Lissajous Goniometer */}
+    <div className="relative flex-1 flex flex-col items-center">
+      <svg
+        viewBox="-1.2 -1.2 2.4 2.4"
+        className="w-full"
+        style={{ maxHeight: "200px" }}
+      >
+        {/* Background grid */}
+        <circle cx="0" cy="0" r="1" fill="none" stroke="#1F2937" strokeWidth="0.02" />
+        <circle cx="0" cy="0" r="0.5" fill="none" stroke="#1F2937" strokeWidth="0.01" strokeDasharray="0.05 0.05" />
+        {/* Axis lines */}
+        <line x1="-1" y1="0" x2="1" y2="0" stroke="#1F2937" strokeWidth="0.02" />
+        <line x1="0" y1="-1" x2="0" y2="1" stroke="#1F2937" strokeWidth="0.02" />
+        {/* Diagonal guides */}
+        <line x1="-0.7" y1="-0.7" x2="0.7" y2="0.7" stroke="#1F2937" strokeWidth="0.01" strokeDasharray="0.04 0.04" />
+        <line x1="-0.7" y1="0.7" x2="0.7" y2="-0.7" stroke="#1F2937" strokeWidth="0.01" strokeDasharray="0.04 0.04" />
+
+        {/* Labels */}
+        <text x="0" y="-1.05" textAnchor="middle" fontSize="0.12" fill="#4B5563">L+R</text>
+        <text x="0" y="1.18" textAnchor="middle" fontSize="0.12" fill="#4B5563">L+R</text>
+        <text x="-1.1" y="0.04" textAnchor="middle" fontSize="0.12" fill="#4B5563">L</text>
+        <text x="1.1" y="0.04" textAnchor="middle" fontSize="0.12" fill="#4B5563">R</text>
+
+        {/* Correlation indicator — drawn as a dynamic ellipse */}
+        {project.stereo_correlation != null && (() => {
+          const mixCorr = Math.max(-1, Math.min(1, project.stereo_correlation));
+          const mixWidth = Math.min(100, project.stereo_width ?? 0) / 100;
+          const mixRx = Math.max(0.05, mixWidth * 0.8);
+          const mixRy = Math.max(0.05, (1 - mixWidth * 0.5) * 0.8);
+
+          const hasMaster = project.master_stereo_correlation != null;
+          const masterCorr = hasMaster
+            ? Math.max(-1, Math.min(1, project.master_stereo_correlation))
+            : null;
+          const masterWidth = hasMaster
+            ? Math.min(100, project.master_stereo_width ?? 0) / 100
+            : null;
+          const masterRx = masterWidth != null ? Math.max(0.05, masterWidth * 0.8) : null;
+          const masterRy = masterWidth != null ? Math.max(0.05, (1 - masterWidth * 0.5) * 0.8) : null;
+
+          const phaseColor = (corr: number) =>
+            corr > 0.3 ? accentColor : corr > 0 ? "#F0A500" : "#EF4444";
+
+          return (
+            <>
+              {/* Original Mix ellipse — cyan */}
+              <ellipse
+                cx="0" cy="0"
+                rx={mixRx} ry={mixRy}
+                transform="rotate(-45)"
+                fill={accentColor}
+                fillOpacity="0.08"
+                stroke={accentColor}
+                strokeWidth="0.02"
+                strokeOpacity="0.5"
+              />
+
+              {/* AI Master ellipse — amber gold */}
+              {masterRx != null && masterRy != null && masterCorr != null && (
+                <ellipse
+                  cx="0" cy="0"
+                  rx={masterRx} ry={masterRy}
+                  transform="rotate(-45)"
+                  fill="#F0A500"
+                  fillOpacity="0.1"
+                  stroke="#F0A500"
+                  strokeWidth="0.025"
+                  strokeOpacity="0.7"
+                />
+              )}
+
+              {/* Center dot — master color if available */}
+              <circle
+                cx="0" cy="0" r="0.04"
+                fill={masterCorr != null ? phaseColor(masterCorr) : phaseColor(mixCorr)}
+              />
+            </>
+          );
+        })()}
+
+        {/* No data state */}
+        {project.stereo_correlation == null && (
+          <text x="0" y="0.05" textAnchor="middle" fontSize="0.15" fill="#4B5563">
+            No Data
+          </text>
+        )}
+      </svg>
+
+      {/* Correlation meter below goniometer */}
+      <div className="w-full mt-3">
+        <div className="flex justify-between text-[9px] text-zinc-600 mb-1">
+          <span>-1 Phase</span>
+          <span>Correlation</span>
+          <span>+1 Mono</span>
+        </div>
+        <div className="relative h-2 bg-[#0A0A0A] rounded-full overflow-hidden">
+          <div
+            className="absolute h-full rounded-full"
+            style={{
+              width: "50%",
+              left: "50%",
+              transform: "translateX(-50%)",
+              backgroundColor: "#1F2937",
+            }}
+          />
+          {project.stereo_correlation != null && (() => {
+            const corr = Math.max(-1, Math.min(1, project.stereo_correlation));
+            const pct = ((corr + 1) / 2) * 100;
+            const color = corr > 0.3 ? accentColor : corr > 0 ? "#F0A500" : "#EF4444";
+            return (
+              <div
+                className="absolute top-0 h-full w-1 rounded-full"
+                style={{
+                  left: `${pct}%`,
+                  transform: "translateX(-50%)",
+                  backgroundColor: color,
+                  boxShadow: `0 0 6px ${color}`,
+                }}
+              />
+            );
+          })()}
+        </div>
+        {(() => {
+          const corrVal = project.master_stereo_correlation ?? project.stereo_correlation;
+          const corrColor = corrVal != null
+            ? corrVal > 0.3 ? accentColor
+            : corrVal > 0 ? "#F0A500"
+            : "#EF4444"
+            : "#6B7280";
+          const label = project.master_stereo_correlation != null
+            ? "Master" : "Mix";
+
+          return (
+            <div className="flex justify-between mt-2">
+              <div>
+                <p className="text-[9px] text-zinc-500">Correlation ({label})</p>
+                <p className="text-xs font-semibold" style={{ color: corrColor }}>
+                  {corrVal != null ? corrVal.toFixed(2) : "--"}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] text-zinc-500">Phase</p>
+                <p className="text-xs font-semibold" style={{ color: corrColor }}>
+                  {corrVal != null
+                    ? corrVal > 0.3 ? "Healthy"
+                    : corrVal > 0 ? "Caution"
+                    : "Phase Issue"
+                    : "--"}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+    </div>
   </div>
 
 </div>

@@ -57,8 +57,14 @@ const deleteProject = async (
   if (!confirmed) return;
 
   try {
-    // Get all files belonging to project
+    // Get project record first — need master_file_path
+    const { data: project } = await supabase
+      .from("projects")
+      .select("master_file_path")
+      .eq("id", id)
+      .single();
 
+    // Get all uploaded files
     const { data: files, error: filesError } =
       await supabase
         .from("project_files")
@@ -70,26 +76,32 @@ const deleteProject = async (
       return;
     }
 
-    // Delete files from storage
+    // Build full list of storage paths to delete
+    const pathsToDelete: string[] = [];
 
     if (files && files.length > 0) {
-      const filePaths = files.map(
-        (file) => file.file_path
-      );
+      files.forEach(f => pathsToDelete.push(f.file_path));
+    }
 
+    // Add master WAV if it exists
+    if (project?.master_file_path) {
+      pathsToDelete.push(project.master_file_path);
+    }
+
+    // Delete all storage files in one call
+    if (pathsToDelete.length > 0) {
       const { error: storageError } =
         await supabase.storage
           .from("project-files")
-          .remove(filePaths);
+          .remove(pathsToDelete);
 
       if (storageError) {
-        alert(storageError.message);
-        return;
+        console.error("Storage delete error:", storageError);
+        // Don't block — continue with DB cleanup
       }
     }
 
-    // Delete file references
-
+    // Delete file references from DB
     const { error: projectFilesError } =
       await supabase
         .from("project_files")
@@ -101,8 +113,7 @@ const deleteProject = async (
       return;
     }
 
-    // Delete project
-
+    // Delete project record
     const { error: projectError } =
       await supabase
         .from("projects")
