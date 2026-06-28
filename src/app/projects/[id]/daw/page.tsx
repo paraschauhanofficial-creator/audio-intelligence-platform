@@ -209,9 +209,9 @@ export default function DAWPage() {
     buildAudioGraph(buffer);
   };
 
-  const makeSoftClipCurve = (threshold: number): Float32Array => {
+  const makeSoftClipCurve = (threshold: number): Float32Array<ArrayBuffer> => {
     const n = 256;
-    const curve = new Float32Array(n);
+    const curve = new Float32Array(n) as Float32Array<ArrayBuffer>;
     for (let i = 0; i < n; i++) {
       const x = (i * 2) / n - 1;
       const abs = Math.abs(x);
