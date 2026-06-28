@@ -217,6 +217,14 @@ const runMastering = async (
         master_freq_air: result.freqAir,
         master_stereo_correlation: result.stereoCorrelation,
         master_stereo_width: result.stereoWidth,
+        master_input_gain: result.inputGain,
+        master_low_shelf_gain: result.lowShelfGain,
+        master_low_shelf_freq: result.lowShelfFreq,
+        master_high_shelf_gain: result.highShelfGain,
+        master_high_shelf_freq: result.highShelfFreq,
+        master_saturation_drive: result.saturationDrive,
+        master_limiter_ceiling: result.limiterCeiling,
+        master_target_lufs: result.targetLUFS,
       })
       .eq("id", projectId);
 

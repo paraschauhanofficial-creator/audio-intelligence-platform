@@ -3,8 +3,18 @@ import { detectLUFS } from "../ears/lufsDetector";
 import { detectPeaks } from "../ears/peakDetector";
 import { analyzeDynamics } from "../ears/dynamicAnalyzer";
 
-const TARGET_LUFS = -14;
-const TRUE_PEAK_CEILING = -1; // dBTP
+
+
+export interface MasterParams {
+  inputGain?: number;
+  lowShelfGain?: number;
+  lowShelfFreq?: number;
+  highShelfGain?: number;
+  highShelfFreq?: number;
+  saturationDrive?: number;
+  limiterCeiling?: number;
+  targetLUFS?: number;
+}
 
 export interface MasterResult {
   masterBlob: Blob;
@@ -20,10 +30,34 @@ export interface MasterResult {
   freqAir: number | null;
   stereoCorrelation: number | null;
   stereoWidth: number | null;
+  // Chain params used
+  inputGain: number;
+  lowShelfGain: number;
+  lowShelfFreq: number;
+  highShelfGain: number;
+  highShelfFreq: number;
+  saturationDrive: number;
+  limiterCeiling: number;
+  targetLUFS: number;
 }
 
-export async function auraMaster(file: File): Promise<MasterResult> {
-  console.log("[Aura Master] Starting mastering chain...");
+export async function auraMaster(
+  file: File,
+  params?: MasterParams
+): Promise<MasterResult> {
+  // Use provided params or defaults
+  const targetLUFS = params?.targetLUFS ?? -14;
+  const limiterCeiling = params?.limiterCeiling ?? -1;
+  const lowShelfGain = params?.lowShelfGain ?? -1.5;
+  const lowShelfFreq = params?.lowShelfFreq ?? 100;
+  const highShelfGain = params?.highShelfGain ?? 1.5;
+  const highShelfFreq = params?.highShelfFreq ?? 10000;
+  const saturationDrive = params?.saturationDrive ?? 0.95;
+
+  console.log("[Aura Master] Starting mastering chain...", {
+    targetLUFS, limiterCeiling, lowShelfGain, lowShelfFreq,
+    highShelfGain, highShelfFreq, saturationDrive
+  });
 
   const arrayBuffer = await file.arrayBuffer();
   const audioContext = new AudioContext();
@@ -47,9 +81,9 @@ for (let c = 0; c < numberOfChannels; c++) {
   const inputLUFS = await measureLUFS(channels, sampleRate);
   console.log(`[Aura Master] Input LUFS: ${inputLUFS.toFixed(2)}`);
 
-  // ── STEP 2: Input Gain — push toward -14 LUFS ───────────────
+  // ── STEP 2: Input Gain — push toward target LUFS ────────────
   console.log("[Aura Master] Step 2 — Applying input gain...");
-  const gainDB = TARGET_LUFS - inputLUFS;
+  const gainDB = params?.inputGain ?? (targetLUFS - inputLUFS);
   const gainLinear = Math.pow(10, gainDB / 20);
   console.log(`[Aura Master] Gain: ${gainDB.toFixed(2)} dB (${gainLinear.toFixed(3)}x)`);
 
@@ -59,27 +93,27 @@ for (let c = 0; c < numberOfChannels; c++) {
     }
   }
 
-  // ── STEP 3: Low Shelf -1.5dB at 100Hz — reduce mud ─────────
-  console.log("[Aura Master] Step 3 — Low shelf EQ (-1.5dB @ 100Hz)...");
+  // ── STEP 3: Low Shelf — reduce mud ──────────────────────────
+  console.log(`[Aura Master] Step 3 — Low shelf EQ (${lowShelfGain}dB @ ${lowShelfFreq}Hz)...`);
   for (let c = 0; c < numberOfChannels; c++) {
-    channels[c] = applyLowShelf(channels[c], sampleRate, 100, -1.5);
+    channels[c] = applyLowShelf(channels[c], sampleRate, lowShelfFreq, lowShelfGain);
   }
 
-  // ── STEP 4: High Shelf +1.5dB at 10kHz — add air ───────────
-  console.log("[Aura Master] Step 4 — High shelf EQ (+1.5dB @ 10kHz)...");
+  // ── STEP 4: High Shelf — add air ────────────────────────────
+  console.log(`[Aura Master] Step 4 — High shelf EQ (+${highShelfGain}dB @ ${highShelfFreq}Hz)...`);
   for (let c = 0; c < numberOfChannels; c++) {
-    channels[c] = applyHighShelf(channels[c], sampleRate, 10000, 1.5);
+    channels[c] = applyHighShelf(channels[c], sampleRate, highShelfFreq, highShelfGain);
   }
 
-  // ── STEP 5: Soft Clipper — warmth before limiter ────────────
-  console.log("[Aura Master] Step 5 — Soft saturation...");
+  // ── STEP 5: Soft Clipper ─────────────────────────────────────
+  console.log(`[Aura Master] Step 5 — Soft saturation (drive: ${saturationDrive})...`);
   for (let c = 0; c < numberOfChannels; c++) {
-    channels[c] = applySoftClipper(channels[c], 0.95);
+    channels[c] = applySoftClipper(channels[c], saturationDrive);
   }
 
-  // ── STEP 6: Brickwall Limiter — ceiling at -1 dBTP ──────────
-  console.log("[Aura Master] Step 6 — Brickwall limiting...");
-  const ceilingLinear = Math.pow(10, TRUE_PEAK_CEILING / 20);
+  // ── STEP 6: Brickwall Limiter ────────────────────────────────
+  console.log(`[Aura Master] Step 6 — Brickwall limiting (ceiling: ${limiterCeiling} dBTP)...`);
+  const ceilingLinear = Math.pow(10, limiterCeiling / 20);
   for (let c = 0; c < numberOfChannels; c++) {
     channels[c] = applyLimiter(channels[c], ceilingLinear);
   }
@@ -167,6 +201,15 @@ for (let c = 0; c < numberOfChannels; c++) {
     freqAir: masterFreq.air,
     stereoCorrelation: masterStereo.correlation,
     stereoWidth: masterStereo.stereoWidth,
+    // Chain params used
+    inputGain: parseFloat(gainDB.toFixed(2)),
+    lowShelfGain,
+    lowShelfFreq,
+    highShelfGain,
+    highShelfFreq,
+    saturationDrive,
+    limiterCeiling,
+    targetLUFS,
   };
 }
 
