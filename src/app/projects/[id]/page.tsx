@@ -507,21 +507,22 @@ setEditPrompt(
 
     setDaysRemaining(diffDays);
 
-    const {
-      data: projectFiles,
-      error: filesError,
-    } = await supabase
-      .from("project_files")
-      .select("*")
-      .eq("project_id", params.id);
-
-    if (filesError) {
-      console.error(filesError);
-      return;
+    // For stems projects load from project_stems, for mix load from project_files
+    if (data.workflow === "ai_assisted_stems" || data.workflow === "producer_mode_stems") {
+      const { data: stemFiles } = await supabase
+        .from("project_stems")
+        .select("id, original_name as file_name, file_path, file_type")
+        .eq("project_id", params.id);
+      setFiles(stemFiles || []);
+    } else {
+      const { data: projectFiles, error: filesError } = await supabase
+        .from("project_files")
+        .select("*")
+        .eq("project_id", params.id);
+      if (filesError) { console.error(filesError); return; }
+      setFiles(projectFiles || []);
+      console.log(projectFiles);
     }
-
-    setFiles(projectFiles || []);
-    console.log(projectFiles);
   };
 
 
