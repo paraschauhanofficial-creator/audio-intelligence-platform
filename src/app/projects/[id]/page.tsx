@@ -474,10 +474,12 @@ const loadProject = async () => {
     }
 
     if (data.workflow === "ai_assisted_stems" || data.workflow === "producer_mode_stems") {
-      router.push(`/projects/${params.id}/stems`);
-      return;
+      if (!data.master_file_path) {
+        router.push(`/projects/${params.id}/stems`);
+        return;
+      }
+      // Master exists — show this page with results
     }
-
     setProject(data);
 
     setEditName(
@@ -861,17 +863,17 @@ const saveProjectDetails = async () => {
 
 
 const accentColor =
-  project?.workflow === "producer_mode"
+  (project?.workflow === "producer_mode" || project?.workflow === "producer_mode_stems")
     ? "#14D8C4"
     : "#00B7FF";
 
 const accentGlow =
-  project?.workflow === "producer_mode"
+  (project?.workflow === "producer_mode" || project?.workflow === "producer_mode_stems")
     ? "#14D8C4"
     : "#00B7FF";
 
 const workflowLabel =
-  project?.workflow === "producer_mode"
+  (project?.workflow === "producer_mode" || project?.workflow === "producer_mode_stems")
     ? "Producer Mode"
     : "AI Assisted";
 
