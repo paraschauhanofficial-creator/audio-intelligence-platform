@@ -16,6 +16,7 @@ import { auraMaster, encodeMp3 } from "@/intelligence/master/auraMaster";
 export default function ProjectPage() {
   const params = useParams();
   const router = useRouter();
+  const ENABLE_WAVEFORMS = false; // set to true after July 11th billing reset
 
   const [project, setProject] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
@@ -109,6 +110,7 @@ const [masterDuration, setMasterDuration] = useState("0:00");
 
   useEffect(() => {
   if (
+    !ENABLE_WAVEFORMS ||
     project?.audio_type !== "mix" ||
     files.length === 0 ||
     !waveformRef.current
@@ -125,12 +127,12 @@ const [masterDuration, setMasterDuration] = useState("0:00");
 
   useEffect(() => {
     if (
+      !ENABLE_WAVEFORMS ||
       !project?.master_file_path ||
       !masterWaveformRef.current
     ) {
       return;
     }
-
     loadMasterWaveform();
 
     return () => {
