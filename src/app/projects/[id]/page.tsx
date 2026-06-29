@@ -473,6 +473,11 @@ const loadProject = async () => {
       return;
     }
 
+    if (data.workflow === "ai_assisted_stems" || data.workflow === "producer_mode_stems") {
+      router.push(`/projects/${params.id}/stems`);
+      return;
+    }
+
     setProject(data);
 
     setEditName(
@@ -981,8 +986,7 @@ const workflowLabel =
 
 
 
-{project.workflow ===
-  "producer_mode" && (
+{(project.workflow === "producer_mode" || project.workflow === "producer_mode_stems") && (
   <button
     onClick={() =>
       router.push(
