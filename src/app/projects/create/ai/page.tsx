@@ -259,7 +259,7 @@ export default function AIProjectPage() {
         type="radio"
         value="stems"
         checked={audioType === "stems"}
-        onChange={(e) => setAudioType(e.target.value)}
+        onChange={() => router.push(`/projects/create/stems?name=${encodeURIComponent(projectName)}&genre=${encodeURIComponent(genre)}`)}
       />
       Stems
     </label>

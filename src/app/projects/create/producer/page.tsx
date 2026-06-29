@@ -79,6 +79,14 @@ export default function AIProjectPage() {
       return;
     }
 
+    // Stems → redirect to dedicated stems upload flow
+    if (audioType === "stems") {
+      router.push("/projects/create/stems");
+      return;
+    }
+
+    
+
     if (files.length === 0) {
       alert("Please select files");
       return;
@@ -254,7 +262,7 @@ export default function AIProjectPage() {
         type="radio"
         value="stems"
         checked={audioType === "stems"}
-        onChange={(e) => setAudioType(e.target.value)}
+        onChange={() => router.push(`/projects/create/stems?name=${encodeURIComponent(projectName)}&genre=${encodeURIComponent(genre)}`)}
       />
       Stems
     </label>
