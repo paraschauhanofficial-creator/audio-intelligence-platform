@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Trash2 } from "lucide-react";
+import AudioBackground from "@/components/AudioBackground";
 
 export default function MyProjectsPage() {
   const router = useRouter();
@@ -94,10 +95,11 @@ export default function MyProjectsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white">
+    <div className="min-h-screen bg-[#0A0A0A] text-white relative">
+      <AudioBackground />
 
       {/* Header */}
-      <div className="border-b border-[#1F2937] px-8 py-6">
+      <div className="border-b border-[#1F2937] px-8 py-6 relative z-10">
         <div className="flex items-center justify-between">
           <h1 className="heading-brand text-xl font-bold">
             <span className="text-white">NOKASHI</span>
@@ -119,7 +121,7 @@ export default function MyProjectsPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-8 py-12">
+      <div className="max-w-7xl mx-auto px-8 py-12 relative z-10">
         <h2 className="text-4xl font-bold mb-3">My Projects</h2>
         <p className="text-zinc-400 mb-10">Manage and track all your projects.</p>
 
