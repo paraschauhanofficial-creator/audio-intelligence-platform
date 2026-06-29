@@ -211,11 +211,19 @@ export default function StemsProjectPage() {
       .from("project_stems").select("processing_stage").eq("project_id", projectId);
     const doneCount = allStems?.filter(s => s.processing_stage === "analysed").length ?? 0;
 
+    // Pick tempo from drums, key from melodic stem
+    const drumStem    = stems.find(s => s.section === "drums" && s.tempo);
+    const melodicStem = stems.find(s => s.musical_key);
+
     await supabase.from("projects").update({
       stems_analysed: doneCount,
       status:         "processing",
       progress:       50,
       current_task:   "All stems analysed — starting auto-mix...",
+      tempo:          drumStem?.tempo          ?? null,
+      time_signature: drumStem?.time_signature ?? null,
+      musical_key:    melodicStem?.musical_key ?? null,
+      scale:          melodicStem?.scale       ?? null,
     }).eq("id", projectId);
 
     setAnalysisRunning(false);
