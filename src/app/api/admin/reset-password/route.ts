@@ -32,5 +32,13 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await supabaseAdmin.from("admin_audit_log").insert({
+    admin_id: admin.id,
+    action: "password_reset",
+    target_user_id: null,
+    old_value: null,
+    new_value: `password_reset_sent to ${email}`,
+  });
+
   return NextResponse.json({ success: true });
 }

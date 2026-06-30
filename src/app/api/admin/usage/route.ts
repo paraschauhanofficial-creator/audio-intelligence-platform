@@ -11,8 +11,8 @@ async function verifyAdmin(req: Request) {
   if (!authHeader) return null;
   const token = authHeader.replace("Bearer ", "");
 
-  const { data: { user } } = await supabaseAdmin.auth.getUser(token);
-  if (!user) return null;
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !user) return null;
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
@@ -27,7 +27,7 @@ async function verifyAdmin(req: Request) {
 
 export async function GET(req: Request) {
   const caller = await verifyAdmin(req);
-  if (!caller) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!caller) return Response.json({ error: "Unauthorized" }, { status: 403 });
 
   const { data: profiles } = await supabaseAdmin
     .from("profiles")

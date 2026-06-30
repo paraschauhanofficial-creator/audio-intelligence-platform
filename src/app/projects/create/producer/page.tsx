@@ -67,7 +67,7 @@ export default function ProducerProjectPage() {
       const filePath = `${user.id}/${Date.now()}-${file.name}`;
       const { data, error } = await supabase.storage.from("project-files").upload(filePath, file);
       if (error) { alert(error.message); setUploading(false); return []; }
-      uploadedFiles.push({ file_name: file.name, file_path: data.path, file_type: file.type });
+      uploadedFiles.push({ file_name: file.name, file_path: data.path, file_type: file.type, file_size: file.size });
     }
     setUploading(false);
     setUploadComplete(true);
@@ -116,10 +116,20 @@ export default function ProducerProjectPage() {
       const fileRows = uploadedFiles.map(file => ({
         project_id: projectId, user_id: user.id,
         file_name: file.file_name, file_path: file.file_path, file_type: file.file_type,
+        file_size: (file as any).file_size,
       }));
 
       const { error: fileError } = await supabase.from("project_files").insert(fileRows);
-      if (fileError) { console.error(fileError); alert(fileError.message); return; }
+      if (fileError) {
+        console.error(fileError);
+        if (fileError.message?.includes("row-level security")) {
+          alert("You've reached your plan's storage limit. Delete older projects or upgrade your plan to keep uploading.");
+        } else {
+          alert(fileError.message);
+        }
+        await supabase.storage.from("project-files").remove(fileRows.map((r: any) => r.file_path));
+        return;
+      }
 
       router.push(`/projects/${projectId}`);
     } catch (err) { console.error(err); alert("CHECK CONSOLE"); }

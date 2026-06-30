@@ -189,7 +189,7 @@ export default function CreateStemsPage() {
         const { error: uploadErr } = await supabase.storage.from("project-files").upload(filePath, entry.file, { contentType: entry.file.type });
         if (uploadErr) { console.error("Upload failed for", entry.file.name, uploadErr); continue; }
 
-        await supabase.from("project_stems").insert({
+        const { error: stemInsertErr } = await supabase.from("project_stems").insert({
           project_id: project.id, user_id: user.id,
           file_name: slot, original_name: entry.file.name,
           file_path: filePath, file_type: entry.file.type, file_size: entry.file.size,
@@ -200,6 +200,16 @@ export default function CreateStemsPage() {
           processing_stage: "uploaded", progress: 0,
           current_task: "Waiting for analysis...", order_index: i,
         });
+
+        if (stemInsertErr) {
+          console.error("Stem insert failed for", entry.file.name, stemInsertErr);
+          await supabase.storage.from("project-files").remove([filePath]);
+          if (stemInsertErr.message?.includes("row-level security")) {
+            setSaveMsg("Blocked: your plan's storage limit was reached, or Stems isn't available on your current plan. Upgrade to continue.");
+            break; // stop the loop entirely rather than silently skipping remaining stems
+          }
+          continue;
+        }
       }
 
       setSaveMsg("Stems uploaded ✓ — starting analysis...");

@@ -677,12 +677,18 @@ const addFilesToProject = async (
           data.path,
         file_type:
           newFile.type,
+        file_size:
+          newFile.size,
       });
 
     if (insertError) {
-      alert(
-        insertError.message
-      );
+      if (insertError.message?.includes("row-level security")) {
+        alert("You've reached your plan's storage limit. Delete older projects or upgrade your plan to keep uploading.");
+      } else {
+        alert(insertError.message);
+      }
+      // Clean up the orphaned storage object since the DB row was rejected
+      await supabase.storage.from("project-files").remove([filePath]);
       return;
     }
 
@@ -782,6 +788,8 @@ return;
         data.path,
       file_type:
         file.type,
+      file_size:
+        file.size,
     });
   }
 
@@ -793,7 +801,13 @@ return;
       );
 
   if (error) {
-    alert(error.message);
+    if (error.message?.includes("row-level security")) {
+      alert("You've reached your plan's storage limit. Delete older projects or upgrade your plan to keep uploading.");
+    } else {
+      alert(error.message);
+    }
+    // Clean up orphaned storage objects since the DB rows were rejected
+    await supabase.storage.from("project-files").remove(uploadedRows.map(r => r.file_path));
     return;
   }
 
