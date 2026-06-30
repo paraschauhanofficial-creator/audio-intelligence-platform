@@ -13,7 +13,7 @@ import { useParams, useRouter } from "next/navigation";
 import { analyzeAudio } from "@/intelligence/ears/audioAnalyzer";
 import { auraMaster, encodeMp3 } from "@/intelligence/master/auraMaster";
 import Navbar from "@/components/Navbar";
-import { fetchAndLogAudio } from "@/lib/usageTracking";
+import { fetchAndLogAudio, checkEgressBudget } from "@/lib/usageTracking";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -38,6 +38,7 @@ export default function ProjectPage() {
   const wavesurferRef = useRef<any>(null);
   const [currentTime, setCurrentTime] = useState("0:00");
   const [duration, setDuration] = useState("0:00");
+  const [egressBlocked, setEgressBlocked] = useState(false);
   const [isPlaying, setIsPlaying] =
   useState(false);
   const [uploadedPreviewUrl, setUploadedPreviewUrl] =
@@ -323,6 +324,12 @@ const loadWaveform = async () => {
    if (!files[0]?.file_path) {
   return;
 }
+
+  const budgetCheck = await checkEgressBudget();
+  if (!budgetCheck.allowed) {
+    setEgressBlocked(true);
+    return;
+  }
   try {
     const file = files[0];
 
@@ -407,6 +414,12 @@ wavesurferRef.current.on(
 
   const loadMasterWaveform = async () => {
   if (!project?.master_file_path) return;
+
+  const budgetCheck = await checkEgressBudget();
+  if (!budgetCheck.allowed) {
+    setEgressBlocked(true);
+    return;
+  }
 
   try {
     const { data, error } = await supabase.storage
@@ -902,6 +915,15 @@ const workflowLabel =
       {/* Header */}
 
       <Navbar accentColor={accentColor} />
+
+      {egressBlocked && (
+        <div className="bg-[#FF6B4A15] border-b border-[#FF6B4A40] px-8 py-3 text-center text-sm text-[#FF6B4A]">
+          You've hit your monthly preview/playback limit. It resets on the 1st of next month —{" "}
+          <button onClick={() => router.push("/projects/upgrade")} className="underline font-semibold">
+            upgrade for more
+          </button>.
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-8 py-12">
 
@@ -2118,6 +2140,13 @@ style={{
         disabled={!project.master_file_path}
         onClick={async () => {
           if (!project.master_file_path) return;
+
+          const budgetCheck = await checkEgressBudget();
+          if (!budgetCheck.allowed) {
+            setEgressBlocked(true);
+            return;
+          }
+
           const { data, error } = await supabase.storage
             .from("project-files")
             .createSignedUrl(project.master_file_path, 60);
@@ -2157,6 +2186,13 @@ style={{
         disabled={!project.master_file_path}
         onClick={async () => {
           if (!project.master_file_path) return;
+
+          const budgetCheck = await checkEgressBudget();
+          if (!budgetCheck.allowed) {
+            setEgressBlocked(true);
+            return;
+          }
+
           const { data, error } = await supabase.storage
             .from("project-files")
             .createSignedUrl(project.master_file_path, 60);
