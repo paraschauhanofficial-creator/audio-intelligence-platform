@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { signIn } from "@/lib/auth";
+import { notifyLoginSummary } from "@/lib/usageTracking";
 import AudioBackground from "@/components/AudioBackground";
 
 export default function LoginPage() {
@@ -19,6 +20,7 @@ export default function LoginPage() {
     } else {
       localStorage.removeItem("sessionOnly");
     }
+    notifyLoginSummary(); // fire-and-forget, doesn't block navigation
     window.location.href = "/projects";
   };
 
