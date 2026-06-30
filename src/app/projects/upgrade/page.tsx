@@ -23,6 +23,7 @@ const PLANS = [
     icon: Sparkles,
     accent: '#a1a1aa',
     storage: '500MB',
+    egress: '500MB / mo',
     projects: '2 total',
     features: ['Mix workflow only', '500MB storage', '2 projects total', 'Standard AI mastering'],
     cta: 'Current plan',
@@ -35,6 +36,7 @@ const PLANS = [
     icon: Zap,
     accent: '#00B7FF',
     storage: '5GB',
+    egress: '5GB / mo',
     projects: '5 / month',
     features: ['Everything in Free', 'Stems workflow unlocked', '5GB storage', '5 projects per month', 'Priority AI processing', 'Open DAW access'],
     cta: 'Upgrade to Pro',
@@ -48,6 +50,7 @@ const PLANS = [
     icon: Crown,
     accent: '#14D8C4',
     storage: '25GB',
+    egress: '20GB / mo',
     projects: 'Unlimited',
     features: ['Everything in Pro', '25GB storage', 'Unlimited projects', 'Highest-fidelity mastering', 'Early access to new features'],
     cta: 'Upgrade to Studio',
@@ -136,9 +139,14 @@ export default function UpgradePage() {
                   <span className="text-sm text-[#a1a1aa]">{plan.period}</span>
                 </div>
 
-                <div className="flex justify-between text-xs text-[#a1a1aa] mb-6 pb-6 border-b border-white/10">
-                  <span>{plan.storage} storage</span>
-                  <span>{plan.projects}</span>
+                <div className="space-y-1.5 mb-6 pb-6 border-b border-white/10 text-xs text-[#a1a1aa]">
+                  <div className="flex justify-between">
+                    <span>{plan.storage} storage</span>
+                    <span>{plan.projects}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>{plan.egress} preview & playback</span>
+                  </div>
                 </div>
 
                 <ul className="space-y-3 mb-8 flex-1">
@@ -171,7 +179,7 @@ export default function UpgradePage() {
         </div>
 
         <p className="text-center text-xs text-[#a1a1aa] mt-12">
-          Plan limits are not yet enforced anywhere in the app — this page is the storefront only.
+          Storage and monthly preview &amp; playback limits are enforced — your plan determines how much you can store and stream each month.
         </p>
       </main>
     </div>
