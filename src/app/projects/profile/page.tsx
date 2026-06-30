@@ -23,16 +23,17 @@ interface ProjectStats {
   completed: number;
 }
 
-// Bytes, matching the upgrade page: Free 500MB, Pro 5GB, Studio 25GB.
-const PLAN_LIMITS: Record<string, { storage: string; storageBytes: number; projects: string; color: string }> = {
-  free:   { storage: "500 MB", storageBytes: 500 * 1024 * 1024,        projects: "2 total",   color: "#6B7280" },
-  pro:    { storage: "5 GB",   storageBytes: 5 * 1024 * 1024 * 1024,   projects: "5 / month",  color: "#00B7FF" },
-  studio: { storage: "25 GB",  storageBytes: 25 * 1024 * 1024 * 1024,  projects: "Unlimited",  color: "#F0A500" },
+// Display fields (projects label, color) stay here — the actual byte
+// numbers come from STORAGE_BUDGET in usageTracking.ts, single source of
+// truth, so they can never drift out of sync with what's enforced.
+const PLAN_DISPLAY: Record<string, { projects: string; color: string }> = {
+  free:   { projects: "2 total",   color: "#6B7280" },
+  pro:    { projects: "5 / month", color: "#00B7FF" },
+  studio: { projects: "Unlimited", color: "#F0A500" },
 };
 
 // Imported from usageTracking.ts — single source of truth, no local copy.
-import { EGRESS_BUDGET as SHARED_EGRESS_BUDGET } from "@/lib/usageTracking";
-const EGRESS_BUDGET = SHARED_EGRESS_BUDGET;
+import { EGRESS_BUDGET, STORAGE_BUDGET } from "@/lib/usageTracking";
 
 function formatBytes(bytes: number) {
   if (bytes <= 0) return "0 MB";
@@ -181,7 +182,8 @@ export default function ProfilePage() {
   }
 
   const badge = roleBadge(profile.role);
-  const planInfo = PLAN_LIMITS[profile.plan];
+  const planDisplay = PLAN_DISPLAY[profile.plan];
+  const planStorageBytes = STORAGE_BUDGET[profile.plan];
   const egressBudget = EGRESS_BUDGET[profile.plan];
   const initials = (profile.full_name || profile.email).slice(0, 2).toUpperCase();
   const isUnlimited = profile.role === "admin" || profile.role === "super_user";
@@ -295,15 +297,15 @@ export default function ProfilePage() {
               </>
             ) : (
               <>
-                <p className="text-3xl font-bold capitalize mb-4" style={{ color: planInfo.color }}>{profile.plan}</p>
+                <p className="text-3xl font-bold capitalize mb-4" style={{ color: planDisplay.color }}>{profile.plan}</p>
                 <div className="space-y-3 mb-5">
                   <div className="flex justify-between text-sm">
                     <span className="text-zinc-500">Storage limit</span>
-                    <span className="text-zinc-200">{planInfo.storage}</span>
+                    <span className="text-zinc-200">{formatBytes(planStorageBytes)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-zinc-500">Projects</span>
-                    <span className="text-zinc-200">{planInfo.projects}</span>
+                    <span className="text-zinc-200">{planDisplay.projects}</span>
                   </div>
                 </div>
 
@@ -311,8 +313,8 @@ export default function ProfilePage() {
                   <Meter
                     label="Project storage"
                     used={storageUsedBytes}
-                    total={planInfo.storageBytes}
-                    color={planInfo.color}
+                    total={planStorageBytes}
+                    color={planDisplay.color}
                     icon={HardDrive}
                   />
                   {egressTrackingAvailable ? (
@@ -320,9 +322,9 @@ export default function ProfilePage() {
                       label="Preview & playback (this month)"
                       used={egressUsedBytes}
                       total={egressBudget}
-                      color={planInfo.color}
+                      color={planDisplay.color}
                       icon={Waves}
-                      note="Real bytes transferred for waveform loads, previews, and downloads this month — tracked from your own activity, may not include cached-egress discounts Supabase applies on its end."
+                      note="Real bytes transferred this month — not your exact Supabase bill (cached egress is billed cheaper by Supabase but counted at full size here)."
                     />
                   ) : (
                     <div>

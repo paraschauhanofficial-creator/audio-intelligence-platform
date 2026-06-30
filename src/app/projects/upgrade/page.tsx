@@ -6,6 +6,14 @@ import { Check, Sparkles, Crown, Zap } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import Navbar from '@/components/Navbar';
 import AudioBackground from '@/components/AudioBackground';
+import { STORAGE_BUDGET, EGRESS_BUDGET } from '@/lib/usageTracking';
+
+function formatBytes(bytes: number) {
+  if (bytes <= 0) return '0MB';
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1024) return `${mb % 1 === 0 ? mb : mb.toFixed(1)}MB`;
+  return `${(mb / 1024).toFixed(mb / 1024 % 1 === 0 ? 0 : 1)}GB`;
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,10 +30,8 @@ const PLANS = [
     period: 'forever',
     icon: Sparkles,
     accent: '#a1a1aa',
-    storage: '500MB',
-    egress: '500MB / mo',
     projects: '2 total',
-    features: ['Mix workflow only', '500MB storage', '2 projects total', 'Standard AI mastering'],
+    features: ['Mix workflow only', `${formatBytes(STORAGE_BUDGET.free)} storage`, '2 projects total', 'Standard AI mastering'],
     cta: 'Current plan',
   },
   {
@@ -35,10 +41,8 @@ const PLANS = [
     period: '/ month',
     icon: Zap,
     accent: '#00B7FF',
-    storage: '5GB',
-    egress: '5GB / mo',
     projects: '5 / month',
-    features: ['Everything in Free', 'Stems workflow unlocked', '5GB storage', '5 projects per month', 'Priority AI processing', 'Open DAW access'],
+    features: ['Everything in Free', 'Stems workflow unlocked', `${formatBytes(STORAGE_BUDGET.pro)} storage`, '5 projects per month', 'Priority AI processing', 'Open DAW access'],
     cta: 'Upgrade to Pro',
     highlighted: true,
   },
@@ -49,10 +53,8 @@ const PLANS = [
     period: '/ month',
     icon: Crown,
     accent: '#14D8C4',
-    storage: '25GB',
-    egress: '20GB / mo',
     projects: 'Unlimited',
-    features: ['Everything in Pro', '25GB storage', 'Unlimited projects', 'Highest-fidelity mastering', 'Early access to new features'],
+    features: ['Everything in Pro', `${formatBytes(STORAGE_BUDGET.studio)} storage`, 'Unlimited projects', 'Highest-fidelity mastering', 'Early access to new features'],
     cta: 'Upgrade to Studio',
   },
 ];
@@ -141,11 +143,11 @@ export default function UpgradePage() {
 
                 <div className="space-y-1.5 mb-6 pb-6 border-b border-white/10 text-xs text-[#a1a1aa]">
                   <div className="flex justify-between">
-                    <span>{plan.storage} storage</span>
+                    <span>{formatBytes(STORAGE_BUDGET[plan.key])} storage</span>
                     <span>{plan.projects}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>{plan.egress} preview & playback</span>
+                    <span>{formatBytes(EGRESS_BUDGET[plan.key])} preview &amp; playback</span>
                   </div>
                 </div>
 
