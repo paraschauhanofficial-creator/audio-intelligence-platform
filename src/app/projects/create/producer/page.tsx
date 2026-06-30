@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Trash2, Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export default function ProducerProjectPage() {
@@ -15,6 +15,48 @@ export default function ProducerProjectPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadComplete, setUploadComplete] = useState(false);
+
+  // Plan gating — Stems workflow is Pro/Studio only.
+  const [userPlan, setUserPlan] = useState<string | null>(null);
+  const [planLoaded, setPlanLoaded] = useState(false);
+  const stemsLocked = planLoaded && userPlan === "free";
+
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setPlanLoaded(true); return; }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("plan, role")
+        .eq("id", user.id)
+        .single();
+      // admin/super_user bypass the Free-plan restriction entirely
+      const effectivePlan =
+        profile?.role === "admin" || profile?.role === "super_user"
+          ? "unlimited"
+          : profile?.plan ?? "free";
+      setUserPlan(effectivePlan);
+      setPlanLoaded(true);
+    })();
+  }, []);
+
+  const goToStemsFlow = () => {
+    const params = new URLSearchParams();
+    if (projectName) params.set("name", projectName);
+    if (genre) params.set("genre", genre);
+    params.set("workflow", "producer_mode");
+    router.push(`/projects/create/stems?${params.toString()}`);
+  };
+
+  const handleStemsRadioChange = () => {
+    if (stemsLocked) {
+      // Don't navigate — keep their typed name/genre, just surface the upgrade prompt.
+      setAudioType("stems_locked");
+      return;
+    }
+    setAudioType("stems");
+    goToStemsFlow();
+  };
 
   const uploadFiles = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -33,15 +75,12 @@ export default function ProducerProjectPage() {
   };
 
   const handleCreateProject = async () => {
-    if (!audioType) { alert("Please select Mix or Stems"); return; }
+    if (!audioType || audioType === "stems_locked") { alert("Please select Mix or Stems"); return; }
 
     // Stems → redirect to dedicated stems upload flow, passing workflow + name + genre
     if (audioType === "stems") {
-      const params = new URLSearchParams();
-      if (projectName) params.set("name", projectName);
-      if (genre) params.set("genre", genre);
-      params.set("workflow", "producer_mode");
-      router.push(`/projects/create/stems?${params.toString()}`);
+      if (stemsLocked) { setAudioType("stems_locked"); return; } // re-check before navigating
+      goToStemsFlow();
       return;
     }
 
@@ -130,18 +169,31 @@ export default function ProducerProjectPage() {
                 <input type="radio" value="mix" checked={audioType === "mix"} onChange={e => setAudioType(e.target.value)}/>
                 Final Mix
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" value="stems" checked={audioType === "stems"}
-                  onChange={() => {
-                    const params = new URLSearchParams();
-                    if (projectName) params.set("name", projectName);
-                    if (genre) params.set("genre", genre);
-                    params.set("workflow", "producer_mode");
-                    router.push(`/projects/create/stems?${params.toString()}`);
-                  }}/>
+              <label className={`flex items-center gap-2 ${stemsLocked ? "cursor-pointer opacity-60" : "cursor-pointer"}`}>
+                <input
+                  type="radio"
+                  value="stems"
+                  checked={audioType === "stems" || audioType === "stems_locked"}
+                  onChange={handleStemsRadioChange}
+                />
                 Stems
+                {stemsLocked && <Lock size={13} className="text-zinc-500" />}
               </label>
             </div>
+
+            {audioType === "stems_locked" && (
+              <div className="mb-4 flex items-center justify-between gap-4 bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-3">
+                <p className="text-sm text-zinc-400">
+                  Stems uploads are a <span className="text-white">Pro</span> feature. Upgrade to identify, analyse, and auto-mix individual stems.
+                </p>
+                <button
+                  onClick={() => router.push("/projects/upgrade")}
+                  className="shrink-0 px-4 py-2 text-sm font-semibold bg-[#14D8C4] text-black rounded-lg"
+                >
+                  Upgrade
+                </button>
+              </div>
+            )}
 
             {audioType === "mix" && (
               <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { quickFingerprint } from "@/intelligence/stems/stemsAnalyzer";
@@ -32,6 +32,36 @@ export default function CreateStemsPage() {
   const sourceWorkflow = searchParams.get("workflow") ?? "ai_assisted"; // "ai_assisted" | "producer_mode"
   const [projectName, setProjectName] = useState(searchParams.get("name") ?? "");
   const [genre,       setGenre]       = useState(searchParams.get("genre") ?? "");
+
+  // Plan gate — Stems is Pro/Studio only. Checked here too because this page
+  // is reachable directly by URL, bypassing the radio-button gate on
+  // create/ai and create/producer.
+  const [planChecked, setPlanChecked] = useState(false);
+  const [planAllowed, setPlanAllowed] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/login"); return; }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("plan, role")
+        .eq("id", user.id)
+        .single();
+
+      const isUnrestricted = profile?.role === "admin" || profile?.role === "super_user";
+      const isFree = !isUnrestricted && (profile?.plan ?? "free") === "free";
+
+      if (isFree) {
+        router.push("/projects/upgrade");
+        return;
+      }
+
+      setPlanAllowed(true);
+      setPlanChecked(true);
+    })();
+  }, [router]);
 
   const [phase,          setPhase]          = useState<Phase>("upload");
   const [fingerprintMsg, setFingerprintMsg] = useState("");
@@ -182,6 +212,18 @@ export default function CreateStemsPage() {
       setSaving(false);
     }
   };
+
+  // ── PLAN-CHECK GATE ───────────────────────────────────────────────────────
+  // Blocks the page entirely until we've confirmed the user is allowed here.
+  // Free-plan users are redirected to /projects/upgrade inside the effect
+  // above, so by the time planChecked is true and planAllowed is false,
+  // a redirect is already in flight — render nothing to avoid a UI flash.
+  if (!planChecked) return (
+    <div className="min-h-screen bg-[#0A0A0A] text-white flex items-center justify-center">
+      <p className="text-sm text-zinc-500">Loading…</p>
+    </div>
+  );
+  if (!planAllowed) return null;
 
   // ── UPLOAD PHASE ──────────────────────────────────────────────────────────
   if (phase === "upload") return (
