@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Navbar from "@/components/Navbar";
 import AudioBackground from "@/components/AudioBackground";
-import { Shield, Crown, User as UserIcon, Music2, Mic2, Sparkles } from "lucide-react";
+import { Shield, Crown, User as UserIcon, Music2, Mic2, Sparkles, HardDrive, Waves } from "lucide-react";
 
 interface Profile {
   id: string;
@@ -23,11 +23,61 @@ interface ProjectStats {
   completed: number;
 }
 
-const PLAN_LIMITS: Record<string, { storage: string; projects: string; color: string }> = {
-  free:   { storage: "1 GB",   projects: "3 / month",     color: "#6B7280" },
-  pro:    { storage: "25 GB",  projects: "Unlimited",     color: "#00B7FF" },
-  studio: { storage: "100 GB", projects: "Unlimited",     color: "#F0A500" },
+// Bytes, matching the upgrade page: Free 500MB, Pro 5GB, Studio 25GB.
+const PLAN_LIMITS: Record<string, { storage: string; storageBytes: number; projects: string; color: string }> = {
+  free:   { storage: "500 MB", storageBytes: 500 * 1024 * 1024,        projects: "2 total",   color: "#6B7280" },
+  pro:    { storage: "5 GB",   storageBytes: 5 * 1024 * 1024 * 1024,   projects: "5 / month",  color: "#00B7FF" },
+  studio: { storage: "25 GB",  storageBytes: 25 * 1024 * 1024 * 1024,  projects: "Unlimited",  color: "#F0A500" },
 };
+
+// Soft monthly preview/egress budget per plan, in bytes. This is NOT Supabase's
+// real billing egress — Supabase doesn't expose per-user egress to client code.
+// This is a self-reported estimate from usage_events.bytes_estimate, intended
+// to warn users before they feel throttled, not to reconcile against the bill.
+const EGRESS_BUDGET: Record<string, number> = {
+  free:   200 * 1024 * 1024,        // 200MB/mo
+  pro:    3 * 1024 * 1024 * 1024,   // 3GB/mo
+  studio: 10 * 1024 * 1024 * 1024,  // 10GB/mo
+};
+
+function formatBytes(bytes: number) {
+  if (bytes <= 0) return "0 MB";
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
+function Meter({
+  label, used, total, color, icon: Icon, note,
+}: { label: string; used: number; total: number; color: string; icon: any; note?: string }) {
+  const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+  const isHot = pct >= 90;
+  const isWarm = pct >= 70 && pct < 90;
+  const barColor = isHot ? "#FF6B4A" : isWarm ? "#F0A500" : color;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="flex items-center gap-1.5 text-xs text-zinc-400">
+          <Icon size={13} className="text-zinc-500" />
+          {label}
+        </span>
+        <span className="text-xs text-zinc-300">
+          {formatBytes(used)} <span className="text-zinc-600">/ {formatBytes(total)}</span>
+        </span>
+      </div>
+      <div className="w-full h-1.5 bg-[#0A0A0A] rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: barColor }} />
+      </div>
+      {isHot && (
+        <p className="text-[11px] mt-1" style={{ color: "#FF6B4A" }}>
+          You're close to your {label.toLowerCase()} limit — consider upgrading or freeing up space.
+        </p>
+      )}
+      {note && !isHot && <p className="text-[10px] text-zinc-600 mt-1">{note}</p>}
+    </div>
+  );
+}
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -37,6 +87,10 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+
+  const [storageUsedBytes, setStorageUsedBytes] = useState(0);
+  const [egressUsedBytes, setEgressUsedBytes] = useState(0);
+  const [egressTrackingAvailable, setEgressTrackingAvailable] = useState(true);
 
   useEffect(() => { loadProfile(); }, []);
 
@@ -64,6 +118,36 @@ export default function ProfilePage() {
 
       setStats({ total: projects.length, mixProjects, stemsProjects, completed });
       setRecentProjects(projects.slice(0, 5));
+    }
+
+    // Real storage used — sum of file_size across both upload tables.
+    // (file_size must be populated at upload time; rows without it count as 0.)
+    const [{ data: mixFiles }, { data: stemFiles }] = await Promise.all([
+      supabase.from("project_files").select("file_size").eq("user_id", user.id),
+      supabase.from("project_stems").select("file_size").eq("user_id", user.id),
+    ]);
+    const mixBytes  = (mixFiles  ?? []).reduce((sum, f: any) => sum + (f.file_size ?? 0), 0);
+    const stemBytes = (stemFiles ?? []).reduce((sum, f: any) => sum + (f.file_size ?? 0), 0);
+    setStorageUsedBytes(mixBytes + stemBytes);
+
+    // Estimated monthly preview/egress — requires a usage_events table that
+    // doesn't exist yet (see note below the meter). Fails gracefully to 0.
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const { data: events, error: eventsErr } = await supabase
+      .from("usage_events")
+      .select("bytes_estimate")
+      .eq("user_id", user.id)
+      .gte("created_at", startOfMonth.toISOString());
+
+    if (eventsErr) {
+      // Table likely doesn't exist yet on this project — show the meter as
+      // "not yet tracked" rather than a broken 0/0 bar.
+      setEgressTrackingAvailable(false);
+    } else {
+      setEgressUsedBytes((events ?? []).reduce((sum, e: any) => sum + (e.bytes_estimate ?? 0), 0));
     }
 
     setLoading(false);
@@ -103,6 +187,7 @@ export default function ProfilePage() {
 
   const badge = roleBadge(profile.role);
   const planInfo = PLAN_LIMITS[profile.plan];
+  const egressBudget = EGRESS_BUDGET[profile.plan];
   const initials = (profile.full_name || profile.email).slice(0, 2).toUpperCase();
   const isUnlimited = profile.role === "admin" || profile.role === "super_user";
 
@@ -187,15 +272,43 @@ export default function ProfilePage() {
             ) : (
               <>
                 <p className="text-3xl font-bold capitalize mb-4" style={{ color: planInfo.color }}>{profile.plan}</p>
-                <div className="space-y-3">
+                <div className="space-y-3 mb-5">
                   <div className="flex justify-between text-sm">
-                    <span className="text-zinc-500">Storage</span>
+                    <span className="text-zinc-500">Storage limit</span>
                     <span className="text-zinc-200">{planInfo.storage}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-zinc-500">Projects</span>
                     <span className="text-zinc-200">{planInfo.projects}</span>
                   </div>
+                </div>
+
+                <div className="space-y-4 pt-4 border-t border-[#1F2937]">
+                  <Meter
+                    label="Project storage"
+                    used={storageUsedBytes}
+                    total={planInfo.storageBytes}
+                    color={planInfo.color}
+                    icon={HardDrive}
+                  />
+                  {egressTrackingAvailable ? (
+                    <Meter
+                      label="Preview & playback (this month)"
+                      used={egressUsedBytes}
+                      total={egressBudget}
+                      color={planInfo.color}
+                      icon={Waves}
+                      note="Estimated from waveform loads, previews, and downloads — not your exact Supabase bill."
+                    />
+                  ) : (
+                    <div>
+                      <span className="flex items-center gap-1.5 text-xs text-zinc-400 mb-1.5">
+                        <Waves size={13} className="text-zinc-500" />
+                        Preview & playback
+                      </span>
+                      <p className="text-[11px] text-zinc-600">Usage tracking not set up yet for this account.</p>
+                    </div>
+                  )}
                 </div>
               </>
             )}
