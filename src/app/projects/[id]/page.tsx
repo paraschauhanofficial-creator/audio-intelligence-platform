@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
 import { analyzeAudio } from "@/intelligence/ears/audioAnalyzer";
 import { auraMaster, encodeMp3 } from "@/intelligence/master/auraMaster";
+import Navbar from "@/components/Navbar";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -898,46 +899,7 @@ const workflowLabel =
 
       {/* Header */}
 
-      <div className="border-b border-[#1F2937] px-8 py-6">
-
-  <div className="flex items-center justify-between">
-
-    <h1 className="heading-brand text-xl font-bold">
-      <span className="text-white">NOKASHI</span>
-      <span className="text-[#00B7FF]"> STUDIOS</span>
-    </h1>
-
-    <div className="flex items-center gap-3">
-
-  <button
-    onClick={() => router.push("/projects")}
-    className="px-4 py-2 rounded-lg border border-[#1F2937] hover:border-[#00B7FF]"
-  >
-    Home
-  </button>
-
-  <button
-    onClick={() => router.push("/projects/list")}
-    className="px-4 py-2 rounded-lg border border-[#1F2937] hover:border-[#00B7FF]"
-  >
-    My Projects
-  </button>
-
-  <button
-    onClick={async () => {
-      await supabase.auth.signOut();
-      router.push("/login");
-    }}
-    className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400"
-  >
-    Logout
-  </button>
-
-</div>
-
-  </div>
-
-</div>
+      <Navbar accentColor={accentColor} />
 
       <div className="max-w-7xl mx-auto px-8 py-12">
 
@@ -1468,6 +1430,7 @@ style={{
   <audio
   ref={uploadedAudioRef}
   src={uploadedPreviewUrl}
+  preload="none"
   className="hidden"
   onTimeUpdate={() => {
     if (!uploadedAudioRef.current)

@@ -3,6 +3,8 @@
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import AudioBackground from "@/components/AudioBackground";
+import Navbar from "@/components/Navbar";
+
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -17,22 +19,8 @@ export default function ProjectsPage() {
       <AudioBackground />
 
       {/* Header */}
-      <div className="relative z-10 flex items-center justify-between px-8 py-6 border-b border-[#1F2937]">
-        <h1 className="heading-brand text-xl font-bold">
-          <span className="text-white">NOKASHI</span>
-          <span className="text-[#00B7FF]"> STUDIOS</span>
-        </h1>
-        <div className="flex items-center gap-4">
-          <button onClick={() => router.push("/projects/list")}
-            className="px-5 py-2 rounded-lg bg-[#00B7FF] text-black font-semibold hover:opacity-90 transition">
-            My Projects
-          </button>
-          <button onClick={handleLogout}
-            className="px-5 py-2 rounded-lg border border-[#1F2937] hover:border-[#00B7FF] transition">
-            Logout
-          </button>
-        </div>
-      </div>
+      // inside return:
+<Navbar accentColor="#00B7FF" />
 
       {/* Content */}
       <div className="relative z-10 max-w-7xl mx-auto px-8 pt-12">

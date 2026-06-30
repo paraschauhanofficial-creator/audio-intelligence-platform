@@ -42,6 +42,7 @@ interface TrackRecord {
 export default function DAWPage() {
   const router = useRouter();
   const params = useParams();
+  const ENABLE_DAW_AUDIO = false; // set to true after July 11th billing reset
 
   const [project,        setProject]        = useState<any>(null);
   const [tracks,         setTracks]         = useState<TrackRecord[]>([]);
@@ -253,6 +254,7 @@ export default function DAWPage() {
 
   // ── Load audio + waveforms when URLs ready ────────────────────────────────
   useEffect(() => {
+    if (!ENABLE_DAW_AUDIO) return; // disabled to prevent egress until billing reset
     if (!Object.keys(audioUrls).length || !tracks.length) return;
     if (isStemsProject) {
       buildStemsAudioGraph().then(() => setTimeout(() => loadWaveforms(), 100));
@@ -263,11 +265,12 @@ export default function DAWPage() {
   }, [audioUrls, tracks]);
 
   useEffect(() => {
-    if (!Object.keys(audioUrls).length || !tracks.length) return;
-    if (Object.keys(wavesurferRefs.current).length === 0) return; // don't fire on first mount
-    const t = setTimeout(() => loadWaveforms(), 150);
-    return () => clearTimeout(t);
-  }, [trackHeight]);
+  if (!ENABLE_DAW_AUDIO) return; // disabled to prevent egress until billing reset
+  if (!Object.keys(audioUrls).length || !tracks.length) return;
+  if (Object.keys(wavesurferRefs.current).length === 0) return; // don't fire on first mount
+  const t = setTimeout(() => loadWaveforms(), 150);
+  return () => clearTimeout(t);
+}, [trackHeight]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // MASTER CHAIN BUILDER — shared by both mix and stems
