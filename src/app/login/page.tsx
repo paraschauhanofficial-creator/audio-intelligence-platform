@@ -20,7 +20,6 @@ export default function LoginPage() {
     } else {
       localStorage.removeItem("sessionOnly");
     }
-    notifyLoginSummary(); // fire-and-forget, doesn't block navigation
     window.location.href = "/projects";
   };
 

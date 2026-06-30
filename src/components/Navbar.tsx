@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { User, Sparkles, LogOut, ChevronDown, Shield, Bell } from "lucide-react";
+import { notifyLoginSummary } from "@/lib/usageTracking";
 
 interface NotificationRow {
   id: string;
@@ -41,6 +42,7 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
       }
     });
     loadNotifications();
+    notifyLoginSummary();
   }, []);
 
   const loadNotifications = async () => {
