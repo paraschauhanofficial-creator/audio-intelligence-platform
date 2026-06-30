@@ -30,15 +30,9 @@ const PLAN_LIMITS: Record<string, { storage: string; storageBytes: number; proje
   studio: { storage: "25 GB",  storageBytes: 25 * 1024 * 1024 * 1024,  projects: "Unlimited",  color: "#F0A500" },
 };
 
-// Soft monthly preview/egress budget per plan, in bytes. This is NOT Supabase's
-// real billing egress — Supabase doesn't expose per-user egress to client code.
-// This is a self-reported estimate from usage_events.bytes_estimate, intended
-// to warn users before they feel throttled, not to reconcile against the bill.
-const EGRESS_BUDGET: Record<string, number> = {
-  free:   200 * 1024 * 1024,        // 200MB/mo
-  pro:    3 * 1024 * 1024 * 1024,   // 3GB/mo
-  studio: 10 * 1024 * 1024 * 1024,  // 10GB/mo
-};
+// Imported from usageTracking.ts — single source of truth, no local copy.
+import { EGRESS_BUDGET as SHARED_EGRESS_BUDGET } from "@/lib/usageTracking";
+const EGRESS_BUDGET = SHARED_EGRESS_BUDGET;
 
 function formatBytes(bytes: number) {
   if (bytes <= 0) return "0 MB";
@@ -263,13 +257,42 @@ export default function ProfilePage() {
             </div>
 
             {isUnlimited ? (
-              <div className="text-center py-6">
-                <Crown size={40} className="mx-auto mb-3" style={{ color: "#F0A500" }} />
-                <p className="text-xl font-bold" style={{ color: "#F0A500" }}>
-                  {profile.role === "admin" ? "Administrator" : "Super User"}
-                </p>
-                <p className="text-sm text-zinc-500 mt-1">Full unlimited access — no restrictions</p>
-              </div>
+              <>
+                <div className="text-center py-4">
+                  <Crown size={32} className="mx-auto mb-2" style={{ color: "#F0A500" }} />
+                  <p className="text-lg font-bold" style={{ color: "#F0A500" }}>
+                    {profile.role === "admin" ? "Administrator" : "Super User"}
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-1">Unlimited feature access — generous resource ceiling still applies</p>
+                </div>
+                <div className="space-y-4 pt-4 border-t border-[#1F2937]">
+                  <Meter
+                    label="Project storage"
+                    used={storageUsedBytes}
+                    total={25 * 1024 * 1024 * 1024}
+                    color="#F0A500"
+                    icon={HardDrive}
+                  />
+                  {egressTrackingAvailable ? (
+                    <Meter
+                      label="Preview & playback (this month)"
+                      used={egressUsedBytes}
+                      total={20 * 1024 * 1024 * 1024}
+                      color="#F0A500"
+                      icon={Waves}
+                      note="Real bytes transferred this month — admin/super_user are capped at the same ceiling as Studio, not literal infinity."
+                    />
+                  ) : (
+                    <div>
+                      <span className="flex items-center gap-1.5 text-xs text-zinc-400 mb-1.5">
+                        <Waves size={13} className="text-zinc-500" />
+                        Preview & playback
+                      </span>
+                      <p className="text-[11px] text-zinc-600">Usage tracking not set up yet for this account.</p>
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
               <>
                 <p className="text-3xl font-bold capitalize mb-4" style={{ color: planInfo.color }}>{profile.plan}</p>

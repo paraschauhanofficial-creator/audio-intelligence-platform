@@ -15,6 +15,13 @@ interface Profile {
   created_at: string;
 }
 
+function formatBytes(bytes: number) {
+  if (bytes <= 0) return "0 MB";
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState<boolean | null>(null);
@@ -23,6 +30,10 @@ export default function AdminPage() {
   const [search, setSearch] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [toast, setToast] = useState("");
+  const [usageById, setUsageById] = useState<Record<string, {
+    storageUsedBytes: number; storageBudgetBytes: number;
+    egressUsedBytes: number; egressBudgetBytes: number;
+  }>>({});
 
   // Add user form state
   const [newEmail, setNewEmail] = useState("");
@@ -46,7 +57,7 @@ export default function AdminPage() {
     }
 
     setAuthorized(true);
-    await loadUsers();
+    await Promise.all([loadUsers(), loadUsageData()]);
   };
 
   const getAuthHeader = async () => {
@@ -61,6 +72,24 @@ export default function AdminPage() {
     const data = await res.json();
     if (data.users) setUsers(data.users);
     setLoading(false);
+  };
+
+  const loadUsageData = async () => {
+    const headers = await getAuthHeader();
+    const res = await fetch("/api/admin/usage", { headers });
+    const data = await res.json();
+    if (data.users) {
+      const map: typeof usageById = {};
+      for (const u of data.users) {
+        map[u.id] = {
+          storageUsedBytes: u.storageUsedBytes,
+          storageBudgetBytes: u.storageBudgetBytes,
+          egressUsedBytes: u.egressUsedBytes,
+          egressBudgetBytes: u.egressBudgetBytes,
+        };
+      }
+      setUsageById(map);
+    }
   };
 
   const showToast = (msg: string) => {
@@ -184,6 +213,8 @@ export default function AdminPage() {
                   <th className="px-5 py-3 font-medium">User</th>
                   <th className="px-5 py-3 font-medium">Role</th>
                   <th className="px-5 py-3 font-medium">Plan</th>
+                  <th className="px-5 py-3 font-medium">Storage</th>
+                  <th className="px-5 py-3 font-medium">Egress (mo)</th>
                   <th className="px-5 py-3 font-medium">Joined</th>
                   <th className="px-5 py-3 font-medium text-right">Actions</th>
                 </tr>
@@ -219,6 +250,36 @@ export default function AdminPage() {
                         <option value="studio">Studio</option>
                       </select>
                     </td>
+                    <td className="px-5 py-4 min-w-[120px]">
+                      {usageById[u.id] ? (() => {
+                        const s = usageById[u.id];
+                        const pct = Math.min(100, Math.round((s.storageUsedBytes / s.storageBudgetBytes) * 100));
+                        const color = pct >= 90 ? "#FF6B4A" : pct >= 70 ? "#F0A500" : "#6B7280";
+                        return (
+                          <div>
+                            <p className="text-xs text-zinc-400 mb-1">{formatBytes(s.storageUsedBytes)} / {formatBytes(s.storageBudgetBytes)}</p>
+                            <div className="w-full h-1 bg-[#0A0A0A] rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+                            </div>
+                          </div>
+                        );
+                      })() : <span className="text-xs text-zinc-600">—</span>}
+                    </td>
+                    <td className="px-5 py-4 min-w-[120px]">
+                      {usageById[u.id] ? (() => {
+                        const s = usageById[u.id];
+                        const pct = Math.min(100, Math.round((s.egressUsedBytes / s.egressBudgetBytes) * 100));
+                        const color = pct >= 90 ? "#FF6B4A" : pct >= 70 ? "#F0A500" : "#6B7280";
+                        return (
+                          <div>
+                            <p className="text-xs text-zinc-400 mb-1">{formatBytes(s.egressUsedBytes)} / {formatBytes(s.egressBudgetBytes)}</p>
+                            <div className="w-full h-1 bg-[#0A0A0A] rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+                            </div>
+                          </div>
+                        );
+                      })() : <span className="text-xs text-zinc-600">—</span>}
+                    </td>
                     <td className="px-5 py-4 text-zinc-500 text-xs">
                       {new Date(u.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                     </td>
@@ -232,7 +293,7 @@ export default function AdminPage() {
                   </tr>
                 ))}
                 {filteredUsers.length === 0 && (
-                  <tr><td colSpan={5} className="text-center text-zinc-600 py-8">No users found.</td></tr>
+                  <tr><td colSpan={7} className="text-center text-zinc-600 py-8">No users found.</td></tr>
                 )}
               </tbody>
             </table>

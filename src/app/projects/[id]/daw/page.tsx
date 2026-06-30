@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { fetchAndLogAudio, checkEgressBudget } from "@/lib/usageTracking";
 import WaveSurfer from "wavesurfer.js";
 import { auraMaster } from "@/intelligence/master/auraMaster";
 import { SLOT_LABELS, type StemSection } from "@/intelligence/stems/stemsIdentifier";
@@ -50,6 +51,7 @@ export default function DAWPage() {
   const [isExporting,    setIsExporting]    = useState(false);
   const [exportStatus,   setExportStatus]   = useState("");
   const [isStemsProject, setIsStemsProject] = useState(false);
+  const [egressBlocked, setEgressBlocked] = useState(false);
 
   // Master chain params
   const [inputGain,       setInputGain]       = useState(0);
@@ -112,6 +114,7 @@ export default function DAWPage() {
   const isResizingHeight  = useRef(false);
   const waveformRefs      = useRef<Record<string, HTMLDivElement | null>>({});
   const wavesurferRefs    = useRef<Record<string, any>>({});
+  const blobUrlCacheRef   = useRef<Record<string, string>>({}); // track.name → cached blob URL, fetched once
 
   const TRACKS = tracks.map(t => t.name);
   const trackColor  = "#14D8C4";
@@ -268,7 +271,7 @@ export default function DAWPage() {
   if (!ENABLE_DAW_AUDIO) return; // disabled to prevent egress until billing reset
   if (!Object.keys(audioUrls).length || !tracks.length) return;
   if (Object.keys(wavesurferRefs.current).length === 0) return; // don't fire on first mount
-  const t = setTimeout(() => loadWaveforms(), 150);
+  const t = setTimeout(() => redrawWaveformHeights(), 150);
   return () => clearTimeout(t);
 }, [trackHeight]);
 
@@ -324,6 +327,12 @@ export default function DAWPage() {
   // Each stem: fetch → decode → create GainNode → connect to master chain
   // ─────────────────────────────────────────────────────────────────────────
   const buildStemsAudioGraph = async () => {
+    const budgetCheck = await checkEgressBudget();
+    if (!budgetCheck.allowed) {
+      setEgressBlocked(true);
+      return;
+    }
+
     if (audioCtxRef.current) audioCtxRef.current.close();
     const ctx = new AudioContext();
     audioCtxRef.current = ctx;
@@ -338,8 +347,8 @@ export default function DAWPage() {
       if (!url) continue;
 
       try {
-        const response    = await fetch(url);
-        const arrayBuffer = await response.arrayBuffer();
+        const blob        = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
+        const arrayBuffer = await blob.arrayBuffer();
         const buffer      = await ctx.decodeAudioData(arrayBuffer);
 
         stemBuffersRef.current[track.name] = buffer;
@@ -386,10 +395,17 @@ export default function DAWPage() {
     if (!firstTrack) return;
     const url = audioUrls[firstTrack.name];
     if (!url) return;
-    const response    = await fetch(url);
-    const arrayBuffer = await response.arrayBuffer();
-    const ctx         = new AudioContext();
-    const buffer      = await ctx.decodeAudioData(arrayBuffer);
+
+    const budgetCheck = await checkEgressBudget();
+    if (!budgetCheck.allowed) {
+      setEgressBlocked(true);
+      return;
+    }
+
+    const blob         = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
+    const arrayBuffer  = await blob.arrayBuffer();
+    const ctx          = new AudioContext();
+    const buffer       = await ctx.decodeAudioData(arrayBuffer);
     ctx.close();
     buildMixAudioGraph(buffer);
   };
@@ -414,6 +430,13 @@ export default function DAWPage() {
   const loadWaveforms = async () => {
     Object.values(wavesurferRefs.current).forEach(ws => ws?.destroy());
     wavesurferRefs.current = {};
+
+    const budgetCheck = await checkEgressBudget();
+    if (!budgetCheck.allowed) {
+      setEgressBlocked(true);
+      return;
+    }
+
     for (const track of tracks) {
       const url = audioUrls[track.name];
       if (!url) continue;
@@ -427,7 +450,45 @@ export default function DAWPage() {
         cursorWidth: 0, height: trackHeight, barWidth: 2, barGap: 1,
         interact: false, normalize: true,
       });
-      try { await ws.load(url); } catch (e: any) { if (e?.name !== "AbortError") console.error(e); }
+
+      try {
+        // Fetch + log once, then cache the blob URL — resize re-renders
+        // reuse this cached URL instead of re-fetching from Supabase.
+        let blobUrl = blobUrlCacheRef.current[track.name];
+        if (!blobUrl) {
+          const blob = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
+          blobUrl = URL.createObjectURL(blob);
+          blobUrlCacheRef.current[track.name] = blobUrl;
+        }
+        await ws.load(blobUrl);
+      } catch (e: any) {
+        if (e?.name !== "AbortError") console.error(e);
+      }
+
+      wavesurferRefs.current[track.name] = ws;
+    }
+  };
+
+  // Resize-only redraw — no fetch, no logging, no budget check. Reuses the
+  // cached blob URL from loadWaveforms() so dragging the height handle never
+  // touches Supabase again.
+  const redrawWaveformHeights = () => {
+    for (const track of tracks) {
+      const container = waveformRefs.current[track.name];
+      const blobUrl    = blobUrlCacheRef.current[track.name];
+      if (!container || !blobUrl) continue;
+
+      wavesurferRefs.current[track.name]?.destroy();
+
+      const color = sectionColors[track.section] ?? trackColor;
+      const ws = WaveSurfer.create({
+        container,
+        waveColor:     color + "30",
+        progressColor: color,
+        cursorWidth: 0, height: trackHeight, barWidth: 2, barGap: 1,
+        interact: false, normalize: true,
+      });
+      ws.load(blobUrl).catch((e: any) => { if (e?.name !== "AbortError") console.error(e); });
       wavesurferRefs.current[track.name] = ws;
     }
   };
@@ -633,6 +694,8 @@ export default function DAWPage() {
     Object.values(stemSourcesRef.current).forEach(s => { try { s.stop(); } catch(e){} });
     if (sourceNodeRef.current) try { sourceNodeRef.current.stop(); } catch(e){}
     audioCtxRef.current?.close();
+    Object.values(blobUrlCacheRef.current).forEach(url => URL.revokeObjectURL(url));
+    blobUrlCacheRef.current = {};
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -670,11 +733,19 @@ export default function DAWPage() {
   const handleExport = async () => {
     if (!tracks[0]) return;
     setIsExporting(true); setExportStatus("Fetching source...");
+
+    const budgetCheck = await checkEgressBudget();
+    if (!budgetCheck.allowed) {
+      setEgressBlocked(true);
+      setIsExporting(false);
+      return;
+    }
+
     try {
       // For stems, export uses the first track as reference file for auraMaster
       // Future: offline render all stems summed
       const url      = audioUrls[tracks[0].name];
-      const blob     = await (await fetch(url)).blob();
+      const blob     = await fetchAndLogAudio(url, "download", project?.id);
       const file     = new File([blob], tracks[0].name, { type: blob.type });
       setExportStatus("Processing master chain...");
       const result   = await auraMaster(file, { inputGain, lowShelfGain, lowShelfFreq, highShelfGain, highShelfFreq, saturationDrive, limiterCeiling, targetLUFS });
@@ -947,6 +1018,15 @@ export default function DAWPage() {
 
   return (
     <div className="h-screen overflow-hidden bg-[#0A0A0A] text-white flex flex-col">
+
+      {egressBlocked && (
+        <div className="bg-[#FF6B4A15] border-b border-[#FF6B4A40] px-8 py-3 text-center text-sm text-[#FF6B4A] flex-shrink-0">
+          You've hit your monthly preview/playback limit. It resets on the 1st of next month —{" "}
+          <button onClick={() => router.push("/projects/upgrade")} className="underline font-semibold">
+            upgrade for more
+          </button>.
+        </div>
+      )}
 
       {/* ── Header ── */}
       <div className="h-[72px] border-b border-[#1F2937] px-8 flex items-center">

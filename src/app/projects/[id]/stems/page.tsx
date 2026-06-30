@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { fetchAndLogAudio, checkEgressBudget } from "@/lib/usageTracking";
 import { analyzeStem, type StemAnalysisProgress } from "@/intelligence/stems/stemsAnalyzer";
 import { SECTION_LABELS, SLOT_LABELS, type StemSection } from "@/intelligence/stems/stemsIdentifier";
 import { auraMaster } from "@/intelligence/master/auraMaster";
@@ -159,9 +160,8 @@ export default function StemsProjectPage() {
         const url = audioUrls[stem.id];
         if (!url) throw new Error("No signed URL available");
 
-        const response = await fetch(url);
-        const blob     = await response.blob();
-        const file     = new File([blob], stem.original_name, { type: blob.type });
+        const blob = await fetchAndLogAudio(url, "daw_stem_load", projectId);
+        const file = new File([blob], stem.original_name, { type: blob.type });
 
         const result = await analyzeStem(
           file, stem.run_key_detection,
@@ -264,8 +264,8 @@ export default function StemsProjectPage() {
         const url = stemUrls[stem.id];
         if (!url) continue;
         try {
-          const response     = await fetch(url);
-          const arrayBuffer  = await response.arrayBuffer();
+          const blob         = await fetchAndLogAudio(url, "daw_stem_load", projectId);
+          const arrayBuffer  = await blob.arrayBuffer();
           const buffer       = await audioCtx.decodeAudioData(arrayBuffer);
           buffers.push(buffer);
         } catch (e) {
