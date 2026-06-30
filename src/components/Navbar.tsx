@@ -3,7 +3,16 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { User, Sparkles, LogOut, ChevronDown, Shield } from "lucide-react";
+import { User, Sparkles, LogOut, ChevronDown, Shield, Bell } from "lucide-react";
+
+interface NotificationRow {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+}
 
 interface NavbarProps {
   accentColor?: string; // pass project accent (cyan or turquoise) when relevant
@@ -17,6 +26,11 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
   const [isAdmin, setIsAdmin] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationRow[]>([]);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const unreadCount = notifications.filter(n => !n.read).length;
+
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
       if (data.user?.email) setUserEmail(data.user.email);
@@ -26,12 +40,40 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
         if (profile?.role === "admin") setIsAdmin(true);
       }
     });
+    loadNotifications();
   }, []);
+
+  const loadNotifications = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (!error && data) setNotifications(data as NotificationRow[]);
+  };
+
+  const markAsRead = async (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    await supabase.from("notifications").update({ read: true }).eq("id", id);
+  };
+
+  const markAllAsRead = async () => {
+    const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
+    if (unreadIds.length === 0) return;
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    await supabase.from("notifications").update({ read: true }).in("id", unreadIds);
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -86,6 +128,61 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
           );
         })}
       </nav>
+
+      {/* Notifications */}
+      <div className="relative flex-shrink-0 flex items-center gap-3">
+        <div className="relative" ref={notifRef}>
+          <button
+            onClick={() => setNotifOpen(v => !v)}
+            className="relative flex items-center justify-center w-9 h-9 rounded-lg border border-[#1F2937] hover:border-[#374151] transition-colors"
+          >
+            <Bell size={16} className="text-zinc-400" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#FF6B4A] text-[9px] font-bold text-white flex items-center justify-center">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {notifOpen && (
+            <div className="absolute right-0 top-full mt-2 w-80 bg-[#111827] border border-[#1F2937] rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.4)] overflow-hidden animate-fade-in">
+              <div className="px-4 py-3 border-b border-[#1F2937] flex items-center justify-between">
+                <p className="text-sm font-semibold text-zinc-200">Notifications</p>
+                {unreadCount > 0 && (
+                  <button onClick={markAllAsRead} className="text-xs text-zinc-500 hover:text-zinc-300 transition">
+                    Mark all read
+                  </button>
+                )}
+              </div>
+
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <p className="text-sm text-zinc-600 text-center py-8">No notifications yet.</p>
+                ) : (
+                  notifications.map(n => (
+                    <button
+                      key={n.id}
+                      onClick={() => markAsRead(n.id)}
+                      className="w-full text-left px-4 py-3 border-b border-[#1F2937] last:border-0 hover:bg-[#1F293750] transition-colors"
+                      style={{ backgroundColor: n.read ? "transparent" : "#00B7FF08" }}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-[#00B7FF] mt-1.5 flex-shrink-0" />}
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-zinc-200">{n.title}</p>
+                          <p className="text-[11px] text-zinc-500 mt-0.5">{n.message}</p>
+                          <p className="text-[10px] text-zinc-700 mt-1">
+                            {new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
       {/* User dropdown */}
       <div className="relative flex-shrink-0" ref={dropdownRef}>
@@ -155,6 +252,7 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
             </button>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

@@ -121,3 +121,76 @@ export async function checkStorageBudget(): Promise<{
 
   return { allowed: usedBytes < budgetBytes, usedBytes, budgetBytes, plan: planKey };
 }
+
+async function notificationExistsToday(userId: string, type: string): Promise<boolean> {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const { data } = await supabase
+    .from("notifications")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("type", type)
+    .gte("created_at", startOfDay.toISOString())
+    .limit(1);
+
+  return (data?.length ?? 0) > 0;
+}
+
+async function maybeNotify(userId: string, type: string, title: string, message: string) {
+  const alreadySent = await notificationExistsToday(userId, type);
+  if (alreadySent) return;
+
+  const { error } = await supabase.from("notifications").insert({
+    user_id: userId,
+    type,
+    title,
+    message,
+  });
+  if (error) console.error("notifications insert failed:", error);
+}
+
+/**
+ * Checks both egress and storage usage against 70%/90% slabs and fires a
+ * notification (max once per day per slab) when crossed. Safe to call
+ * alongside checkEgressBudget()/checkStorageBudget() — it's read-mostly and
+ * never blocks anything itself.
+ */
+export async function checkUsageSlabsAndNotify(): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const egress = await checkEgressBudget();
+  const storage = await checkStorageBudget();
+
+  const egressPct = egress.budgetBytes > 0 ? (egress.usedBytes / egress.budgetBytes) * 100 : 0;
+  const storagePct = storage.budgetBytes > 0 ? (storage.usedBytes / storage.budgetBytes) * 100 : 0;
+
+  if (egressPct >= 90) {
+    await maybeNotify(
+      user.id, "egress_limit_90",
+      "Preview & playback limit almost reached",
+      "You're at 90% or more of this month's preview and playback allowance. Once it's hit, waveforms and downloads will pause until next month."
+    );
+  } else if (egressPct >= 70) {
+    await maybeNotify(
+      user.id, "egress_warning_70",
+      "Heavy preview & playback usage",
+      "You've used 70% or more of this month's preview and playback allowance. Pausing previews can help you stay under your plan's limit."
+    );
+  }
+
+  if (storagePct >= 90) {
+    await maybeNotify(
+      user.id, "storage_limit_90",
+      "Storage almost full",
+      "You're using 90% or more of your plan's storage. Remove old projects or upgrade to keep uploading."
+    );
+  } else if (storagePct >= 70) {
+    await maybeNotify(
+      user.id, "storage_warning_70",
+      "Storage filling up",
+      "You're using 70% or more of your plan's storage."
+    );
+  }
+}

@@ -33,7 +33,7 @@ const PLAN_DISPLAY: Record<string, { projects: string; color: string }> = {
 };
 
 // Imported from usageTracking.ts — single source of truth, no local copy.
-import { EGRESS_BUDGET, STORAGE_BUDGET } from "@/lib/usageTracking";
+import { EGRESS_BUDGET, STORAGE_BUDGET, checkUsageSlabsAndNotify } from "@/lib/usageTracking";
 
 function formatBytes(bytes: number) {
   if (bytes <= 0) return "0 MB";
@@ -145,6 +145,10 @@ export default function ProfilePage() {
     } else {
       setEgressUsedBytes((events ?? []).reduce((sum, e: any) => sum + (e.bytes_actual ?? 0), 0));
     }
+
+    // Fire-and-forget — checks slabs and inserts a notification if crossed,
+    // doesn't block the page from finishing its load.
+    checkUsageSlabsAndNotify();
 
     setLoading(false);
   };
