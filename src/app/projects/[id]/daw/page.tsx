@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { fetchAndLogAudio, checkEgressBudget } from "@/lib/usageTracking";
+import { fetchAndLogAudio, checkEgressBudget, checkUsageSlabsAndNotify, notifyEgressBlocked } from "@/lib/usageTracking";
 import WaveSurfer from "wavesurfer.js";
 import { auraMaster } from "@/intelligence/master/auraMaster";
 import { SLOT_LABELS, type StemSection } from "@/intelligence/stems/stemsIdentifier";
@@ -330,6 +330,7 @@ export default function DAWPage() {
     const budgetCheck = await checkEgressBudget();
     if (!budgetCheck.allowed) {
       setEgressBlocked(true);
+      notifyEgressBlocked();
       return;
     }
 
@@ -369,6 +370,8 @@ export default function DAWPage() {
 
     durationSeconds.current = maxDuration;
     setDuration(formatTime(maxDuration));
+    checkUsageSlabsAndNotify(); // fire-and-forget, once per graph build, not per-stem
+
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -399,10 +402,12 @@ export default function DAWPage() {
     const budgetCheck = await checkEgressBudget();
     if (!budgetCheck.allowed) {
       setEgressBlocked(true);
+      notifyEgressBlocked();
       return;
     }
 
     const blob         = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
+    checkUsageSlabsAndNotify(); // fire-and-forget
     const arrayBuffer  = await blob.arrayBuffer();
     const ctx          = new AudioContext();
     const buffer       = await ctx.decodeAudioData(arrayBuffer);
@@ -434,6 +439,7 @@ export default function DAWPage() {
     const budgetCheck = await checkEgressBudget();
     if (!budgetCheck.allowed) {
       setEgressBlocked(true);
+      notifyEgressBlocked();
       return;
     }
 
@@ -467,6 +473,7 @@ export default function DAWPage() {
 
       wavesurferRefs.current[track.name] = ws;
     }
+    checkUsageSlabsAndNotify(); // fire-and-forget, once after all tracks loaded
   };
 
   // Resize-only redraw — no fetch, no logging, no budget check. Reuses the
@@ -737,6 +744,7 @@ export default function DAWPage() {
     const budgetCheck = await checkEgressBudget();
     if (!budgetCheck.allowed) {
       setEgressBlocked(true);
+      notifyEgressBlocked();
       setIsExporting(false);
       return;
     }
@@ -746,6 +754,7 @@ export default function DAWPage() {
       // Future: offline render all stems summed
       const url      = audioUrls[tracks[0].name];
       const blob     = await fetchAndLogAudio(url, "download", project?.id);
+      checkUsageSlabsAndNotify(); // fire-and-forget
       const file     = new File([blob], tracks[0].name, { type: blob.type });
       setExportStatus("Processing master chain...");
       const result   = await auraMaster(file, { inputGain, lowShelfGain, lowShelfFreq, highShelfGain, highShelfFreq, saturationDrive, limiterCeiling, targetLUFS });

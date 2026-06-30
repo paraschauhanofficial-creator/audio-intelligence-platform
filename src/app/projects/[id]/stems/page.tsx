@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { fetchAndLogAudio, checkEgressBudget } from "@/lib/usageTracking";
+import { fetchAndLogAudio, checkEgressBudget, notifyEgressBlocked } from "@/lib/usageTracking";
 import { analyzeStem, type StemAnalysisProgress } from "@/intelligence/stems/stemsAnalyzer";
 import { SECTION_LABELS, SLOT_LABELS, type StemSection } from "@/intelligence/stems/stemsIdentifier";
 import { auraMaster } from "@/intelligence/master/auraMaster";
@@ -140,6 +140,13 @@ export default function StemsProjectPage() {
 
   // ── BATCH ANALYSIS ────────────────────────────────────────────────────────
   const runBatchAnalysis = async (toAnalyse: StemRecord[]) => {
+    const budgetCheck = await checkEgressBudget();
+    if (!budgetCheck.allowed) {
+      setError("Your monthly preview/playback limit has been reached. Upgrade your plan or wait until it resets to continue analysing stems.");
+      notifyEgressBlocked();
+      return;
+    }
+
     setAnalysisRunning(true);
 
     await supabase.from("project_stems")
@@ -241,6 +248,15 @@ export default function StemsProjectPage() {
 
   // ── AUTO-MIX: sum all stems → auraMaster → save → redirect to [id] page ──
   const runAutoMix = async (stemList: StemRecord[], proj: any) => {
+    const budgetCheck = await checkEgressBudget();
+    if (!budgetCheck.allowed) {
+      await supabase.from("projects").update({
+        current_task: "Paused — monthly preview/playback limit reached. Upgrade your plan or wait until it resets.",
+      }).eq("id", projectId);
+      notifyEgressBlocked();
+      return;
+    }
+
     setMixingRunning(true);
 
     await supabase.from("projects").update({

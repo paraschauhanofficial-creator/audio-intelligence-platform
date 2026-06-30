@@ -13,7 +13,7 @@ import { useParams, useRouter } from "next/navigation";
 import { analyzeAudio } from "@/intelligence/ears/audioAnalyzer";
 import { auraMaster, encodeMp3 } from "@/intelligence/master/auraMaster";
 import Navbar from "@/components/Navbar";
-import { fetchAndLogAudio, checkEgressBudget } from "@/lib/usageTracking";
+import { fetchAndLogAudio, checkEgressBudget, checkUsageSlabsAndNotify, notifyEgressBlocked } from "@/lib/usageTracking";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -49,6 +49,8 @@ export default function ProjectPage() {
 
   const uploadedAudioRef =
   useRef<HTMLAudioElement>(null);
+
+  const previewBlobUrlRef = useRef<string>("");
 
 const [uploadedPlaying, setUploadedPlaying] =
   useState(false);
@@ -328,6 +330,7 @@ const loadWaveform = async () => {
   const budgetCheck = await checkEgressBudget();
   if (!budgetCheck.allowed) {
     setEgressBlocked(true);
+    notifyEgressBlocked();
     return;
   }
   try {
@@ -394,6 +397,7 @@ wavesurferRef.current.on(
   const blob = await fetchAndLogAudio(data.signedUrl, "waveform_load", project?.id);
   const blobUrl = URL.createObjectURL(blob);
   await wavesurferRef.current.load(blobUrl);
+  checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
 } catch (err: any) {
   if (err?.name !== "AbortError") {
     console.error(err);
@@ -418,6 +422,7 @@ wavesurferRef.current.on(
   const budgetCheck = await checkEgressBudget();
   if (!budgetCheck.allowed) {
     setEgressBlocked(true);
+    notifyEgressBlocked();
     return;
   }
 
@@ -464,6 +469,7 @@ wavesurferRef.current.on(
       const blob = await fetchAndLogAudio(data.signedUrl, "master_waveform_load", project?.id);
       const blobUrl = URL.createObjectURL(blob);
       await masterWavesurferRef.current.load(blobUrl);
+      checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
     } catch (err: any) {
       if (err?.name !== "AbortError") {
         console.error(err);
@@ -549,6 +555,13 @@ setEditPrompt(
   filePath: string,
   fileName: string
 ) => {
+  const budgetCheck = await checkEgressBudget();
+  if (!budgetCheck.allowed) {
+    setEgressBlocked(true);
+    notifyEgressBlocked();
+    return;
+  }
+
   const { data, error } =
     await supabase.storage
       .from("project-files")
@@ -562,13 +575,18 @@ setEditPrompt(
     return;
   }
 
-  setUploadedPreviewUrl(
-    data.signedUrl
-  );
+  try {
+    const blob = await fetchAndLogAudio(data.signedUrl, "preview_play", project?.id);
+    checkUsageSlabsAndNotify(); // fire-and-forget
+    if (previewBlobUrlRef.current) URL.revokeObjectURL(previewBlobUrlRef.current);
+    const blobUrl = URL.createObjectURL(blob);
+    previewBlobUrlRef.current = blobUrl;
 
-  setUploadedPreviewName(
-    fileName
-  );
+    setUploadedPreviewUrl(blobUrl);
+    setUploadedPreviewName(fileName);
+  } catch (err: any) {
+    if (err?.name !== "AbortError") console.error(err);
+  }
 };
 
 
@@ -669,6 +687,7 @@ const addFilesToProject = async (
     }
 
 
+if (previewBlobUrlRef.current) { URL.revokeObjectURL(previewBlobUrlRef.current); previewBlobUrlRef.current = ""; }
 setUploadedPreviewUrl("");
 setUploadedPreviewName("");
 setUploadedProgress(0);
@@ -839,6 +858,7 @@ const deleteFile = async (
     return;
   }
 
+if (previewBlobUrlRef.current) { URL.revokeObjectURL(previewBlobUrlRef.current); previewBlobUrlRef.current = ""; }
 setUploadedPreviewUrl("");
 setUploadedPreviewName("");
 setUploadedProgress(0);
@@ -2144,6 +2164,7 @@ style={{
           const budgetCheck = await checkEgressBudget();
           if (!budgetCheck.allowed) {
             setEgressBlocked(true);
+            notifyEgressBlocked();
             return;
           }
 
@@ -2154,6 +2175,7 @@ style={{
 
           // Fetch as blob to force download instead of browser open
           const blob = await fetchAndLogAudio(data.signedUrl, "download", project.id);
+          checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url;
@@ -2190,6 +2212,7 @@ style={{
           const budgetCheck = await checkEgressBudget();
           if (!budgetCheck.allowed) {
             setEgressBlocked(true);
+            notifyEgressBlocked();
             return;
           }
 
@@ -2200,6 +2223,7 @@ style={{
 
           // Fetch the master WAV and re-encode as MP3
           const blob = await fetchAndLogAudio(data.signedUrl, "download", project.id);
+          checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
           const arrayBuffer = await blob.arrayBuffer();
           const audioContext = new AudioContext();
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);

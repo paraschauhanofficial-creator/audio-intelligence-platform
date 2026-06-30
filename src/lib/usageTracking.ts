@@ -194,3 +194,20 @@ export async function checkUsageSlabsAndNotify(): Promise<void> {
     );
   }
 }
+
+/**
+ * Fires the 'egress_blocked' notification — separate from the 70%/90%
+ * warnings, this fires at the actual moment an action gets refused.
+ * Still capped to once per day per user, same as the warning slabs, so a
+ * user clicking a blocked button repeatedly doesn't spam their own bell.
+ */
+export async function notifyEgressBlocked(): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await maybeNotify(
+    user.id, "egress_blocked",
+    "Action blocked — monthly limit reached",
+    "You've used your full preview & playback allowance for this month. Upgrade your plan or wait until it resets to continue."
+  );
+}
