@@ -13,6 +13,7 @@ import { useParams, useRouter } from "next/navigation";
 import { analyzeAudio } from "@/intelligence/ears/audioAnalyzer";
 import { auraMaster, encodeMp3 } from "@/intelligence/master/auraMaster";
 import Navbar from "@/components/Navbar";
+import { fetchAndLogAudio } from "@/lib/usageTracking";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -383,9 +384,9 @@ wavesurferRef.current.on(
 
 
     try {
-  await wavesurferRef.current.load(
-    data.signedUrl
-  );
+  const blob = await fetchAndLogAudio(data.signedUrl, "waveform_load", project?.id);
+  const blobUrl = URL.createObjectURL(blob);
+  await wavesurferRef.current.load(blobUrl);
 } catch (err: any) {
   if (err?.name !== "AbortError") {
     console.error(err);
@@ -398,7 +399,6 @@ wavesurferRef.current.on(
   }
 }
 };
-
 
 
 
@@ -448,7 +448,9 @@ wavesurferRef.current.on(
     masterWavesurferRef.current.on("pause", () => setMasterPlaying(false));
 
     try {
-      await masterWavesurferRef.current.load(data.signedUrl);
+      const blob = await fetchAndLogAudio(data.signedUrl, "master_waveform_load", project?.id);
+      const blobUrl = URL.createObjectURL(blob);
+      await masterWavesurferRef.current.load(blobUrl);
     } catch (err: any) {
       if (err?.name !== "AbortError") {
         console.error(err);
@@ -2122,8 +2124,7 @@ style={{
           if (error || !data) return;
 
           // Fetch as blob to force download instead of browser open
-          const response = await fetch(data.signedUrl);
-          const blob = await response.blob();
+          const blob = await fetchAndLogAudio(data.signedUrl, "download", project.id);
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url;
@@ -2162,8 +2163,8 @@ style={{
           if (error || !data) return;
 
           // Fetch the master WAV and re-encode as MP3
-          const response = await fetch(data.signedUrl);
-          const arrayBuffer = await response.arrayBuffer();
+          const blob = await fetchAndLogAudio(data.signedUrl, "download", project.id);
+          const arrayBuffer = await blob.arrayBuffer();
           const audioContext = new AudioContext();
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
           const mp3Blob = await encodeMp3(audioBuffer);

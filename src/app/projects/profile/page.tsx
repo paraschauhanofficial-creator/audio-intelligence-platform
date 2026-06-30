@@ -130,24 +130,25 @@ export default function ProfilePage() {
     const stemBytes = (stemFiles ?? []).reduce((sum, f: any) => sum + (f.file_size ?? 0), 0);
     setStorageUsedBytes(mixBytes + stemBytes);
 
-    // Estimated monthly preview/egress — requires a usage_events table that
-    // doesn't exist yet (see note below the meter). Fails gracefully to 0.
+    // Real monthly preview/playback egress — bytes_actual is the real
+    // transferred byte count logged by fetchAndLogAudio() on every
+    // waveform load, master waveform load, and download in [id]/page.tsx.
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
     const { data: events, error: eventsErr } = await supabase
       .from("usage_events")
-      .select("bytes_estimate")
+      .select("bytes_actual")
       .eq("user_id", user.id)
       .gte("created_at", startOfMonth.toISOString());
 
     if (eventsErr) {
-      // Table likely doesn't exist yet on this project — show the meter as
-      // "not yet tracked" rather than a broken 0/0 bar.
+      // Table missing or RLS misconfigured — show the meter as "not yet
+      // tracked" rather than a broken 0/0 bar.
       setEgressTrackingAvailable(false);
     } else {
-      setEgressUsedBytes((events ?? []).reduce((sum, e: any) => sum + (e.bytes_estimate ?? 0), 0));
+      setEgressUsedBytes((events ?? []).reduce((sum, e: any) => sum + (e.bytes_actual ?? 0), 0));
     }
 
     setLoading(false);
@@ -298,7 +299,7 @@ export default function ProfilePage() {
                       total={egressBudget}
                       color={planInfo.color}
                       icon={Waves}
-                      note="Estimated from waveform loads, previews, and downloads — not your exact Supabase bill."
+                      note="Real bytes transferred for waveform loads, previews, and downloads this month — tracked from your own activity, may not include cached-egress discounts Supabase applies on its end."
                     />
                   ) : (
                     <div>
