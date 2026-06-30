@@ -13,36 +13,37 @@ const supabase = createClient(
 );
 
 // Mirrors PLAN_LIMITS on the Profile page — keep these two in sync.
+// Free is a one-time cap (2 projects total, not monthly) — see projects label below.
 const PLANS = [
   {
     key: 'free',
     name: 'Free',
-    price: '$0',
+    price: '₹0',
     period: 'forever',
     icon: Sparkles,
     accent: '#a1a1aa',
     storage: '500MB',
-    projects: '3 / month',
-    features: ['Mix workflow only', '500MB storage', '3 projects per month', 'Standard AI mastering'],
+    projects: '2 total',
+    features: ['Mix workflow only', '500MB storage', '2 projects total', 'Standard AI mastering'],
     cta: 'Current plan',
   },
   {
     key: 'pro',
     name: 'Pro',
-    price: '$19',
+    price: '₹1,799',
     period: '/ month',
     icon: Zap,
     accent: '#00B7FF',
     storage: '5GB',
-    projects: 'Unlimited',
-    features: ['Everything in Free', 'Stems workflow unlocked', '5GB storage', 'Unlimited projects', 'Priority AI processing', 'Open DAW access'],
+    projects: '5 / month',
+    features: ['Everything in Free', 'Stems workflow unlocked', '5GB storage', '5 projects per month', 'Priority AI processing', 'Open DAW access'],
     cta: 'Upgrade to Pro',
     highlighted: true,
   },
   {
     key: 'studio',
     name: 'Studio',
-    price: '$49',
+    price: '₹4,599',
     period: '/ month',
     icon: Crown,
     accent: '#14D8C4',
