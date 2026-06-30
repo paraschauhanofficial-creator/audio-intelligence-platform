@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { User, Sparkles, LogOut, ChevronDown } from "lucide-react";
+import { User, Sparkles, LogOut, ChevronDown, Shield } from "lucide-react";
 
 interface NavbarProps {
   accentColor?: string; // pass project accent (cyan or turquoise) when relevant
@@ -14,11 +14,17 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
   const pathname = usePathname();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [userEmail, setUserEmail] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(async ({ data }) => {
       if (data.user?.email) setUserEmail(data.user.email);
+      if (data.user?.id) {
+        const { data: profile } = await supabase
+          .from("profiles").select("role").eq("id", data.user.id).single();
+        if (profile?.role === "admin") setIsAdmin(true);
+      }
     });
   }, []);
 
@@ -127,6 +133,16 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
               <Sparkles size={16} style={{ color: "#F0A500" }} />
               Upgrade plan
             </button>
+
+            {isAdmin && (
+              <button
+                onClick={() => { setDropdownOpen(false); router.push("/admin"); }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-[#FF6B4A] hover:bg-[#FF6B4A12] transition-colors"
+              >
+                <Shield size={16} className="text-[#FF6B4A]" />
+                Admin panel
+              </button>
+            )}
 
             <div className="border-t border-[#1F2937]" />
 
