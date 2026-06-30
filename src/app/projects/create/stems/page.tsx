@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { notifyStorageBlocked } from "@/lib/usageTracking";
 import { quickFingerprint } from "@/intelligence/stems/stemsAnalyzer";
 import {
   identifyStems, createSlotIndexTracker,
@@ -206,6 +207,7 @@ export default function CreateStemsPage() {
           await supabase.storage.from("project-files").remove([filePath]);
           if (stemInsertErr.message?.includes("row-level security")) {
             setSaveMsg("Blocked: your plan's storage limit was reached, or Stems isn't available on your current plan. Upgrade to continue.");
+            notifyStorageBlocked(); // closest match — Postgres doesn't distinguish which restrictive policy fired
             break; // stop the loop entirely rather than silently skipping remaining stems
           }
           continue;

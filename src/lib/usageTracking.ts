@@ -211,3 +211,52 @@ export async function notifyEgressBlocked(): Promise<void> {
     "You've used your full preview & playback allowance for this month. Upgrade your plan or wait until it resets to continue."
   );
 }
+
+/**
+ * Fires the 'storage_limit_90' notification — at the moment an upload gets
+ * refused for being over the storage cap (now enforced at the RLS level).
+ * Once per day per user, same pattern as notifyEgressBlocked().
+ */
+export async function notifyStorageBlocked(): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await maybeNotify(
+    user.id, "storage_limit_90",
+    "Upload blocked — storage full",
+    "You've used your full storage allowance. Delete older projects or upgrade your plan to keep uploading."
+  );
+}
+
+function formatBytesShort(bytes: number): string {
+  if (bytes <= 0) return "0MB";
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)}MB`;
+  return `${(mb / 1024).toFixed(1)}GB`;
+}
+
+/**
+ * Fires once per day, on login — a quick "here's where you stand" summary
+ * showing storage and preview/playback remaining. Reuses checkStorageBudget
+ * and checkEgressBudget so the numbers always match the real meters, no
+ * separate calculation.
+ */
+export async function notifyLoginSummary(): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const alreadySentToday = await notificationExistsToday(user.id, "login_summary");
+  if (alreadySentToday) return;
+
+  const storage = await checkStorageBudget();
+  const egress = await checkEgressBudget();
+
+  const storageLeft = Math.max(0, storage.budgetBytes - storage.usedBytes);
+  const egressLeft = Math.max(0, egress.budgetBytes - egress.usedBytes);
+
+  await maybeNotify(
+    user.id, "login_summary",
+    "Welcome back",
+    `You have ${formatBytesShort(storageLeft)} of storage and ${formatBytesShort(egressLeft)} of preview & playback left this month.`
+  );
+}

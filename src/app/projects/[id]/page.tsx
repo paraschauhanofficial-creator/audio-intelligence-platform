@@ -13,7 +13,7 @@ import { useParams, useRouter } from "next/navigation";
 import { analyzeAudio } from "@/intelligence/ears/audioAnalyzer";
 import { auraMaster, encodeMp3 } from "@/intelligence/master/auraMaster";
 import Navbar from "@/components/Navbar";
-import { fetchAndLogAudio, checkEgressBudget, checkUsageSlabsAndNotify, notifyEgressBlocked } from "@/lib/usageTracking";
+import { fetchAndLogAudio, checkEgressBudget, checkUsageSlabsAndNotify, notifyEgressBlocked, notifyStorageBlocked } from "@/lib/usageTracking";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -684,6 +684,7 @@ const addFilesToProject = async (
     if (insertError) {
       if (insertError.message?.includes("row-level security")) {
         alert("You've reached your plan's storage limit. Delete older projects or upgrade your plan to keep uploading.");
+        notifyStorageBlocked();
       } else {
         alert(insertError.message);
       }
@@ -803,6 +804,7 @@ return;
   if (error) {
     if (error.message?.includes("row-level security")) {
       alert("You've reached your plan's storage limit. Delete older projects or upgrade your plan to keep uploading.");
+      notifyStorageBlocked();
     } else {
       alert(error.message);
     }

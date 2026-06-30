@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { notifyStorageBlocked } from "@/lib/usageTracking";
 
 export default function AIProjectPage() {
   const router = useRouter();
@@ -124,6 +125,7 @@ export default function AIProjectPage() {
         console.error(fileError);
         if (fileError.message?.includes("row-level security")) {
           alert("You've reached your plan's storage limit. Delete older projects or upgrade your plan to keep uploading.");
+          notifyStorageBlocked();
         } else {
           alert(fileError.message);
         }
