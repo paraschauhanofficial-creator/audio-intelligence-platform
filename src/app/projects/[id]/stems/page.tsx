@@ -7,6 +7,7 @@ import { fetchAndLogAudio, checkEgressBudget, notifyEgressBlocked } from "@/lib/
 import { analyzeStem, type StemAnalysisProgress } from "@/intelligence/stems/stemsAnalyzer";
 import { SECTION_LABELS, SLOT_LABELS, type StemSection } from "@/intelligence/stems/stemsIdentifier";
 import { auraMaster } from "@/intelligence/master/auraMaster";
+import { mixStems, type MixerStemRecord } from "@/intelligence/mixer";
 
 interface StemRecord {
   id:                    string;
@@ -291,34 +292,19 @@ export default function StemsProjectPage() {
 
       if (buffers.length === 0) throw new Error("No stem buffers decoded");
 
-      // Sum all stems into one buffer (mix down)
-      const maxLength   = Math.max(...buffers.map(b => b.length));
-      const sampleRate  = buffers[0].sampleRate;
-      const channels    = Math.max(...buffers.map(b => b.numberOfChannels));
-      const mixBuffer   = audioCtx.createBuffer(channels, maxLength, sampleRate);
-
-      for (let ch = 0; ch < channels; ch++) {
-        const mixData = mixBuffer.getChannelData(ch);
-        for (const buffer of buffers) {
-          const srcCh = Math.min(ch, buffer.numberOfChannels - 1);
-          const srcData = buffer.getChannelData(srcCh);
-          for (let i = 0; i < srcData.length; i++) {
-            mixData[i] += srcData[i];
-          }
-        }
-        // Normalize to prevent clipping
-        let peak = 0;
-        for (let i = 0; i < mixData.length; i++) peak = Math.max(peak, Math.abs(mixData[i]));
-        if (peak > 0.95) {
-          const scale = 0.95 / peak;
-          for (let i = 0; i < mixData.length; i++) mixData[i] *= scale;
-        }
-      }
+      
 
       audioCtx.close();
 
+      // Route through Aura Mixer — intelligent gain staging, panning, HPF
+      const mixedBuffer = await mixStems(
+        buffers,
+        stemList.filter(s => s.processing_stage === "analysed") as unknown as MixerStemRecord[],
+        buffers[0].sampleRate
+      );
+
       // Convert mix buffer to WAV blob for auraMaster
-      const wavBlob = bufferToWavBlob(mixBuffer);
+      const wavBlob = bufferToWavBlob(mixedBuffer);
       const mixFile = new File([wavBlob], `${proj.name}-stems-mix.wav`, { type: "audio/wav" });
 
       await supabase.from("projects").update({
