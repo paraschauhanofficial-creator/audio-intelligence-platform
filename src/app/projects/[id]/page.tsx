@@ -2109,7 +2109,7 @@ style={{
       <div className="border border-[#1F2937] rounded-xl p-6">
         <audio
           ref={mixAudioRef}
-          src={mixAudioUrl}
+          src={mixAudioUrl || undefined}
           preload="none"
           className="hidden"
           onTimeUpdate={() => {
@@ -2217,7 +2217,7 @@ style={{
       <div className="border border-[#1F2937] rounded-xl p-6">
         <audio
           ref={masterAudioRef}
-          src={masterAudioUrl}
+          src={masterAudioUrl || undefined}
           preload="none"
           className="hidden"
           onTimeUpdate={() => {
