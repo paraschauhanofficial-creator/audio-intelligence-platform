@@ -66,6 +66,22 @@ const [masterPlaying, setMasterPlaying] = useState(false);
 const [masterCurrentTime, setMasterCurrentTime] = useState("0:00");
 const [masterDuration, setMasterDuration] = useState("0:00");
 
+// ── Simple audio preview players (replaces waveforms) ──────────────────
+const mixAudioRef = useRef<HTMLAudioElement>(null);
+const masterAudioRef = useRef<HTMLAudioElement>(null);
+const [mixAudioUrl, setMixAudioUrl] = useState("");
+const [masterAudioUrl, setMasterAudioUrl] = useState("");
+const [mixAudioPlaying, setMixAudioPlaying] = useState(false);
+const [masterAudioPlaying, setMasterAudioPlaying] = useState(false);
+const [mixAudioProgress, setMixAudioProgress] = useState(0);
+const [masterAudioProgress, setMasterAudioProgress] = useState(0);
+const [mixAudioTime, setMixAudioTime] = useState("0:00");
+const [masterAudioTime, setMasterAudioTime] = useState("0:00");
+const [mixAudioDuration, setMixAudioDuration] = useState("0:00");
+const [masterAudioDuration, setMasterAudioDuration] = useState("0:00");
+const mixAudioBlobRef = useRef<string>("");
+const masterAudioBlobRef = useRef<string>("");
+
   const fileInputRef =
   useRef<HTMLInputElement>(null);
 
@@ -317,6 +333,64 @@ const runAudioAnalysis = async (
 
   } catch (error) {
     console.error("[Aura Ears] Analysis Failed", error);
+  }
+};
+
+
+
+const loadMixAudioPreview = async () => {
+  if (!files[0]?.file_path) return;
+  if (mixAudioUrl) return; // already loaded
+
+  const budgetCheck = await checkEgressBudget();
+  if (!budgetCheck.allowed) {
+    setEgressBlocked(true);
+    notifyEgressBlocked();
+    return;
+  }
+
+  const { data, error } = await supabase.storage
+    .from("project-files")
+    .createSignedUrl(files[0].file_path, 3600);
+  if (error || !data) return;
+
+  try {
+    const blob = await fetchAndLogAudio(data.signedUrl, "waveform_load", project?.id);
+    checkUsageSlabsAndNotify();
+    if (mixAudioBlobRef.current) URL.revokeObjectURL(mixAudioBlobRef.current);
+    const blobUrl = URL.createObjectURL(blob);
+    mixAudioBlobRef.current = blobUrl;
+    setMixAudioUrl(blobUrl);
+  } catch (err: any) {
+    if (err?.name !== "AbortError") console.error(err);
+  }
+};
+
+const loadMasterAudioPreview = async () => {
+  if (!project?.master_file_path) return;
+  if (masterAudioUrl) return; // already loaded
+
+  const budgetCheck = await checkEgressBudget();
+  if (!budgetCheck.allowed) {
+    setEgressBlocked(true);
+    notifyEgressBlocked();
+    return;
+  }
+
+  const { data, error } = await supabase.storage
+    .from("project-files")
+    .createSignedUrl(project.master_file_path, 3600);
+  if (error || !data) return;
+
+  try {
+    const blob = await fetchAndLogAudio(data.signedUrl, "master_waveform_load", project?.id);
+    checkUsageSlabsAndNotify();
+    if (masterAudioBlobRef.current) URL.revokeObjectURL(masterAudioBlobRef.current);
+    const blobUrl = URL.createObjectURL(blob);
+    masterAudioBlobRef.current = blobUrl;
+    setMasterAudioUrl(blobUrl);
+  } catch (err: any) {
+    if (err?.name !== "AbortError") console.error(err);
   }
 };
 
@@ -2033,22 +2107,65 @@ style={{
       </div>
 
       <div className="border border-[#1F2937] rounded-xl p-6">
-        <div ref={waveformRef} className="w-full min-h-[140px]" />
+        <audio
+          ref={mixAudioRef}
+          src={mixAudioUrl}
+          preload="none"
+          className="hidden"
+          onTimeUpdate={() => {
+            if (!mixAudioRef.current) return;
+            const pct = (mixAudioRef.current.currentTime / mixAudioRef.current.duration) * 100;
+            setMixAudioProgress(isNaN(pct) ? 0 : pct);
+            setMixAudioTime(formatTime(mixAudioRef.current.currentTime));
+          }}
+          onLoadedMetadata={() => {
+            if (!mixAudioRef.current) return;
+            setMixAudioDuration(formatTime(mixAudioRef.current.duration));
+          }}
+          onPlay={() => setMixAudioPlaying(true)}
+          onPause={() => setMixAudioPlaying(false)}
+        />
 
-        <div className="flex items-center justify-between mt-4">
+        <div className="flex items-center gap-3 mt-2">
           <button
-            onClick={() => wavesurferRef.current?.playPause()}
-            className="h-10 w-10 rounded-full flex items-center justify-center text-black font-bold hover:scale-105 transition"
-            style={{
-              backgroundColor: accentColor,
-              boxShadow: `0 0 12px ${accentColor}`,
+            onClick={async () => {
+              if (!mixAudioUrl) await loadMixAudioPreview();
+              if (!mixAudioRef.current) return;
+              mixAudioRef.current.paused
+                ? mixAudioRef.current.play()
+                : mixAudioRef.current.pause();
             }}
+            className="h-10 w-10 rounded-full flex items-center justify-center text-black font-bold hover:scale-105 transition flex-shrink-0"
+            style={{ backgroundColor: accentColor, boxShadow: `0 0 12px ${accentColor}` }}
           >
-            {isPlaying ? "❚❚" : "▶"}
+            {mixAudioPlaying ? "❚❚" : "▶"}
           </button>
 
-          <span className="text-sm text-zinc-400">
-            {currentTime} / {duration}
+          <div
+            className="flex-1 h-[4px] bg-[#1F2937] rounded-full relative cursor-pointer"
+            onClick={(e) => {
+              if (!mixAudioRef.current) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const pct = (e.clientX - rect.left) / rect.width;
+              mixAudioRef.current.currentTime = mixAudioRef.current.duration * pct;
+            }}
+          >
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${mixAudioProgress}%`, backgroundColor: accentColor }}
+            />
+            <div
+              className="absolute top-1/2 -translate-y-1/2 h-3 w-3 rounded-full"
+              style={{
+                left: `calc(${mixAudioProgress}% - 6px)`,
+                backgroundColor: accentColor,
+                boxShadow: `0 0 8px ${accentColor}`,
+              }}
+            />
+          </div>
+
+          <span className="text-sm text-zinc-400 flex-shrink-0">
+            {mixAudioTime || "0:00"} / {mixAudioDuration || "0:00"}
           </span>
         </div>
       </div>
@@ -2098,27 +2215,65 @@ style={{
 
     {project.master_file_path ? (
       <div className="border border-[#1F2937] rounded-xl p-6">
-        <div
-          ref={masterWaveformRef}
-          className="w-full min-h-[140px]"
+        <audio
+          ref={masterAudioRef}
+          src={masterAudioUrl}
+          preload="none"
+          className="hidden"
+          onTimeUpdate={() => {
+            if (!masterAudioRef.current) return;
+            const pct = (masterAudioRef.current.currentTime / masterAudioRef.current.duration) * 100;
+            setMasterAudioProgress(isNaN(pct) ? 0 : pct);
+            setMasterAudioTime(formatTime(masterAudioRef.current.currentTime));
+          }}
+          onLoadedMetadata={() => {
+            if (!masterAudioRef.current) return;
+            setMasterAudioDuration(formatTime(masterAudioRef.current.duration));
+          }}
+          onPlay={() => setMasterAudioPlaying(true)}
+          onPause={() => setMasterAudioPlaying(false)}
         />
 
-        <div className="flex items-center justify-between mt-4">
+        <div className="flex items-center gap-3 mt-2">
           <button
-            onClick={() =>
-              masterWavesurferRef.current?.playPause()
-            }
-            className="h-10 w-10 rounded-full flex items-center justify-center text-black font-bold hover:scale-105 transition"
-            style={{
-              backgroundColor: "#F0A500",
-              boxShadow: `0 0 12px #F0A500`,
+            onClick={async () => {
+              if (!masterAudioUrl) await loadMasterAudioPreview();
+              if (!masterAudioRef.current) return;
+              masterAudioRef.current.paused
+                ? masterAudioRef.current.play()
+                : masterAudioRef.current.pause();
             }}
+            className="h-10 w-10 rounded-full flex items-center justify-center text-black font-bold hover:scale-105 transition flex-shrink-0"
+            style={{ backgroundColor: "#F0A500", boxShadow: `0 0 12px #F0A500` }}
           >
-            {masterPlaying ? "❚❚" : "▶"}
+            {masterAudioPlaying ? "❚❚" : "▶"}
           </button>
 
-          <span className="text-sm text-zinc-400">
-            {masterCurrentTime} / {masterDuration}
+          <div
+            className="flex-1 h-[4px] bg-[#1F2937] rounded-full relative cursor-pointer"
+            onClick={(e) => {
+              if (!masterAudioRef.current) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const pct = (e.clientX - rect.left) / rect.width;
+              masterAudioRef.current.currentTime = masterAudioRef.current.duration * pct;
+            }}
+          >
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${masterAudioProgress}%`, backgroundColor: "#F0A500" }}
+            />
+            <div
+              className="absolute top-1/2 -translate-y-1/2 h-3 w-3 rounded-full"
+              style={{
+                left: `calc(${masterAudioProgress}% - 6px)`,
+                backgroundColor: "#F0A500",
+                boxShadow: `0 0 8px #F0A500`,
+              }}
+            />
+          </div>
+
+          <span className="text-sm text-zinc-400 flex-shrink-0">
+            {masterAudioTime || "0:00"} / {masterAudioDuration || "0:00"}
           </span>
         </div>
       </div>
