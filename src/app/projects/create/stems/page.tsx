@@ -17,6 +17,7 @@ interface StemEntry {
   identification: IdentificationResult;
   overrideSection: StemSection | null;
   overrideSlot: string | null;
+  mixRole: "main" | "supporting";
 }
 
 type Phase = "upload" | "fingerprinting" | "popup" | "saving";
@@ -111,6 +112,7 @@ export default function CreateStemsPage() {
     const entries: StemEntry[] = fileArr.map((file, i) => ({
       id: crypto.randomUUID(), file, identification: results[i],
       overrideSection: null, overrideSlot: null,
+      mixRole: "supporting",
     }));
     setStems(entries);
     setPhase("popup");
@@ -123,6 +125,9 @@ export default function CreateStemsPage() {
 
   const setSlot = (id: string, slot: string) =>
     setStems(prev => prev.map(s => s.id === id ? { ...s, overrideSlot: slot } : s));
+
+  const setMixRole = (id: string, role: "main" | "supporting") =>
+    setStems(prev => prev.map(s => s.id === id ? { ...s, mixRole: role } : s));
 
   const removeEntry = (id: string) => setStems(prev => prev.filter(s => s.id !== id));
 
@@ -200,6 +205,7 @@ export default function CreateStemsPage() {
           needs_review: entry.identification.needsReview,
           processing_stage: "uploaded", progress: 0,
           current_task: "Waiting for analysis...", order_index: i,
+          mix_role: entry.mixRole,
         });
 
         if (stemInsertErr) {
@@ -432,6 +438,18 @@ export default function CreateStemsPage() {
                           className="bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:outline-none flex-shrink-0">
                           {SLOT_OPTIONS[sec].map(s => <option key={s} value={s}>{SLOT_LABELS[s] ?? s}</option>)}
                           <option value="misc">Other</option>
+                        </select>
+                        <select
+                          value={entry.mixRole}
+                          onChange={e => setMixRole(entry.id, e.target.value as "main" | "supporting")}
+                          className="bg-[#0A0A0A] border rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none flex-shrink-0 transition"
+                          style={{
+                            borderColor: entry.mixRole === "main" ? accentColor : "#1F2937",
+                            color: entry.mixRole === "main" ? accentColor : "#71717a",
+                          }}
+                        >
+                          <option value="supporting">Supporting</option>
+                          <option value="main">Main</option>
                         </select>
                         {entry.identification.runKeyDetection && (
                           <span className="text-[9px] border border-[#14D8C440] text-[#14D8C4] px-1.5 py-0.5 rounded flex-shrink-0">Key ✓</span>

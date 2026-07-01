@@ -28,6 +28,7 @@ export interface MixerStemRecord {
   section:         string;       // "drums"|"instruments"|"vocals"|"other"
   slot:            string;       // e.g. "kick","lead_vocal","tabla","harmonium"
   slot_index:      number;       // 1 = first instance, 2 = second, etc.
+  mix_role:        string;       // "main" | "supporting" — set by user on identification page
   integrated_lufs: number | null;
   true_peak:       number | null;
   freq_sub:        number | null;   // dB at ~40Hz
@@ -464,8 +465,15 @@ function gainForStem(stem: MixerStemRecord): number {
   // Priority trim: ±1.5dB nudge based on how forward this instrument should be
   const base = slotBase(stem.slot);
   const priority = SLOT_PRIORITY[stem.slot] ?? SLOT_PRIORITY[base] ?? 5;
-  const priorityTrim = ((priority - 5) / 10) * 1.5; // -0.75 to +0.75 dB
+  const priorityTrim = ((priority - 5) / 10) * 1.5;
   gainDb += priorityTrim;
+
+  // mix_role override: Main gets +2dB forward push, Supporting gets -1dB back
+  if (stem.mix_role === "main") {
+    gainDb += 2.0;
+  } else {
+    gainDb -= 1.0;
+  }
 
   return dbToLinear(gainDb);
 }
@@ -494,6 +502,12 @@ function panForStem(stem: MixerStemRecord): number {
   // Tanpura/drone special case: always center regardless
   if (["tanpura", "tamboura", "shruti_box", "drone", "ambience"].includes(base)) {
     pan = 0;
+  }
+
+  // mix_role override: Main pulls strongly toward center
+  // Supporting stays at its natural slot pan position
+  if (stem.mix_role === "main") {
+    pan = pan * 0.2; // 80% pull toward center — main element anchors the mix
   }
 
   return Math.max(-1, Math.min(1, pan));
