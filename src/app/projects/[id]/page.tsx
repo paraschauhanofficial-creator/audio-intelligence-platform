@@ -14,6 +14,7 @@ import { analyzeAudio } from "@/intelligence/ears/audioAnalyzer";
 import { auraMaster, encodeMp3 } from "@/intelligence/master/auraMaster";
 import Navbar from "@/components/Navbar";
 import { fetchAndLogAudio, checkEgressBudget, checkUsageSlabsAndNotify, notifyEgressBlocked, notifyStorageBlocked } from "@/lib/usageTracking";
+import { getCachedAudio, setCachedAudio } from "@/lib/audioCache";
 
 export default function ProjectPage() {
   const params = useParams();
@@ -340,8 +341,22 @@ const runAudioAnalysis = async (
 
 const loadMixAudioPreview = async () => {
   if (!files[0]?.file_path) return;
-  if (mixAudioUrl) return; // already loaded
+  if (mixAudioUrl) return; // already loaded this session
 
+  const filePath = files[0].file_path;
+
+  // Check browser cache first — zero egress if hit
+  const cached = await getCachedAudio(filePath);
+  if (cached) {
+    console.log("[AudioCache] Mix preview hit:", filePath);
+    if (mixAudioBlobRef.current) URL.revokeObjectURL(mixAudioBlobRef.current);
+    const blobUrl = URL.createObjectURL(cached);
+    mixAudioBlobRef.current = blobUrl;
+    setMixAudioUrl(blobUrl);
+    return;
+  }
+
+  // Cache miss — check egress budget before fetching
   const budgetCheck = await checkEgressBudget();
   if (!budgetCheck.allowed) {
     setEgressBlocked(true);
@@ -351,12 +366,14 @@ const loadMixAudioPreview = async () => {
 
   const { data, error } = await supabase.storage
     .from("project-files")
-    .createSignedUrl(files[0].file_path, 3600);
+    .createSignedUrl(filePath, 3600);
   if (error || !data) return;
 
   try {
     const blob = await fetchAndLogAudio(data.signedUrl, "waveform_load", project?.id);
     checkUsageSlabsAndNotify();
+    // Store in cache for all future uses — this session and beyond
+    setCachedAudio(filePath, blob);
     if (mixAudioBlobRef.current) URL.revokeObjectURL(mixAudioBlobRef.current);
     const blobUrl = URL.createObjectURL(blob);
     mixAudioBlobRef.current = blobUrl;
@@ -368,8 +385,22 @@ const loadMixAudioPreview = async () => {
 
 const loadMasterAudioPreview = async () => {
   if (!project?.master_file_path) return;
-  if (masterAudioUrl) return; // already loaded
+  if (masterAudioUrl) return; // already loaded this session
 
+  const filePath = project.master_file_path;
+
+  // Check browser cache first — zero egress if hit
+  const cached = await getCachedAudio(filePath);
+  if (cached) {
+    console.log("[AudioCache] Master preview hit:", filePath);
+    if (masterAudioBlobRef.current) URL.revokeObjectURL(masterAudioBlobRef.current);
+    const blobUrl = URL.createObjectURL(cached);
+    masterAudioBlobRef.current = blobUrl;
+    setMasterAudioUrl(blobUrl);
+    return;
+  }
+
+  // Cache miss — check egress budget before fetching
   const budgetCheck = await checkEgressBudget();
   if (!budgetCheck.allowed) {
     setEgressBlocked(true);
@@ -379,12 +410,14 @@ const loadMasterAudioPreview = async () => {
 
   const { data, error } = await supabase.storage
     .from("project-files")
-    .createSignedUrl(project.master_file_path, 3600);
+    .createSignedUrl(filePath, 3600);
   if (error || !data) return;
 
   try {
     const blob = await fetchAndLogAudio(data.signedUrl, "master_waveform_load", project?.id);
     checkUsageSlabsAndNotify();
+    // Store in cache for all future uses — this session and beyond
+    setCachedAudio(filePath, blob);
     if (masterAudioBlobRef.current) URL.revokeObjectURL(masterAudioBlobRef.current);
     const blobUrl = URL.createObjectURL(blob);
     masterAudioBlobRef.current = blobUrl;

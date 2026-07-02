@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { fetchAndLogAudio, checkEgressBudget, checkUsageSlabsAndNotify, notifyEgressBlocked } from "@/lib/usageTracking";
+import { getCachedAudio, setCachedAudio } from "@/lib/audioCache";
 import WaveSurfer from "wavesurfer.js";
 import { auraMaster } from "@/intelligence/master/auraMaster";
 import { SLOT_LABELS, type StemSection } from "@/intelligence/stems/stemsIdentifier";
@@ -348,7 +349,14 @@ export default function DAWPage() {
       if (!url) continue;
 
       try {
-        const blob        = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
+        // Check cache first — zero egress if hit
+        let blob = await getCachedAudio(track.filePath);
+        if (blob) {
+          console.log("[AudioCache] DAW stem hit:", track.filePath);
+        } else {
+          blob = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
+          setCachedAudio(track.filePath, blob);
+        }
         const arrayBuffer = await blob.arrayBuffer();
         const buffer      = await ctx.decodeAudioData(arrayBuffer);
 
@@ -406,8 +414,15 @@ export default function DAWPage() {
       return;
     }
 
-    const blob         = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
-    checkUsageSlabsAndNotify(); // fire-and-forget
+    // Check cache first — zero egress if hit
+    let blob = await getCachedAudio(firstTrack.filePath);
+    if (blob) {
+      console.log("[AudioCache] DAW mix audio hit:", firstTrack.filePath);
+    } else {
+      blob = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
+      checkUsageSlabsAndNotify(); // fire-and-forget
+      setCachedAudio(firstTrack.filePath, blob);
+    }
     const arrayBuffer  = await blob.arrayBuffer();
     const ctx          = new AudioContext();
     const buffer       = await ctx.decodeAudioData(arrayBuffer);
@@ -458,11 +473,16 @@ export default function DAWPage() {
       });
 
       try {
-        // Fetch + log once, then cache the blob URL — resize re-renders
-        // reuse this cached URL instead of re-fetching from Supabase.
+        // Check persistent browser cache first, then in-session ref, then fetch
         let blobUrl = blobUrlCacheRef.current[track.name];
         if (!blobUrl) {
-          const blob = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
+          let blob = await getCachedAudio(track.filePath);
+          if (blob) {
+            console.log("[AudioCache] DAW waveform hit:", track.filePath);
+          } else {
+            blob = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
+            setCachedAudio(track.filePath, blob);
+          }
           blobUrl = URL.createObjectURL(blob);
           blobUrlCacheRef.current[track.name] = blobUrl;
         }

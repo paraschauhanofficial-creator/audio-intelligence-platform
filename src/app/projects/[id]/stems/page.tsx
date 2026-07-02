@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { fetchAndLogAudio, checkEgressBudget, notifyEgressBlocked } from "@/lib/usageTracking";
+import { getCachedAudio, setCachedAudio } from "@/lib/audioCache";
 import { analyzeStem, type StemAnalysisProgress } from "@/intelligence/stems/stemsAnalyzer";
 import { SECTION_LABELS, SLOT_LABELS, type StemSection } from "@/intelligence/stems/stemsIdentifier";
 import { auraMaster } from "@/intelligence/master/auraMaster";
@@ -168,7 +169,14 @@ export default function StemsProjectPage() {
         const url = audioUrls[stem.id];
         if (!url) throw new Error("No signed URL available");
 
-        const blob = await fetchAndLogAudio(url, "daw_stem_load", projectId);
+        // Check cache first — zero egress if hit
+        let blob = await getCachedAudio(stem.file_path);
+        if (blob) {
+          console.log("[AudioCache] Analysis hit:", stem.file_path);
+        } else {
+          blob = await fetchAndLogAudio(url, "daw_stem_load", projectId);
+          setCachedAudio(stem.file_path, blob);
+        }
         const file = new File([blob], stem.original_name, { type: blob.type });
 
         const result = await analyzeStem(
@@ -281,7 +289,15 @@ export default function StemsProjectPage() {
         const url = stemUrls[stem.id];
         if (!url) continue;
         try {
-          const blob         = await fetchAndLogAudio(url, "daw_stem_load", projectId);
+          // Check cache first — stems were already fetched during analysis
+          // so this should almost always be a cache hit, zero additional egress
+          let blob = await getCachedAudio(stem.file_path);
+          if (blob) {
+            console.log("[AudioCache] AutoMix hit:", stem.file_path);
+          } else {
+            blob = await fetchAndLogAudio(url, "daw_stem_load", projectId);
+            setCachedAudio(stem.file_path, blob);
+          }
           const arrayBuffer  = await blob.arrayBuffer();
           const buffer       = await audioCtx.decodeAudioData(arrayBuffer);
           buffers.push(buffer);
