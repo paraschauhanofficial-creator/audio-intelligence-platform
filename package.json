@@ -17,6 +17,7 @@
     "pitchfinder": "^2.3.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "swiper": "^14.0.1",
     "wavesurfer.js": "^7.12.8",
     "web-audio-beat-detector": "^8.2.36"
   },
