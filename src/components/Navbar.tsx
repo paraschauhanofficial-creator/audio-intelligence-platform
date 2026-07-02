@@ -125,8 +125,9 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
     <div className="relative z-20 flex items-center justify-between px-8 py-5 border-b" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
       {/* Logo */}
       <h1 className="heading-brand text-xl font-bold flex-shrink-0">
-        <span style={{ color: "var(--text)" }}>NOKASHI</span>
-        <span className="text-[#00B7FF]"> STUDIOS</span>
+        <span className="text-sm font-semibold tracking-[0.25em]" style={{ color: isDarkMode ? "#E8E4DC" : "#1A1714" }}>
+          NOKASHI STUDIOS
+        </span>
       </h1>
 
       {/* Nav links — glow hover text style */}
