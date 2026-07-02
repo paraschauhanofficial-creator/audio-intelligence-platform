@@ -131,7 +131,7 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
       </h1>
 
       {/* Nav links — glow hover text style */}
-      <nav className="hidden md:flex items-center gap-8 absolute left-1/2 -translate-x-1/2">
+      <nav className="flex items-center gap-4 md:gap-8 absolute left-1/2 -translate-x-1/2">
         {navLinks.map(link => {
           const isActive = pathname === link.href;
           return (
