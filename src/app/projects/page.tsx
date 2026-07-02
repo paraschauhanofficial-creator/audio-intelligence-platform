@@ -2,12 +2,24 @@
 
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import AudioBackground from "@/components/AudioBackground";
 import Navbar from "@/components/Navbar";
 
 
 export default function ProjectsPage() {
   const router = useRouter();
+  const [parallax, setParallax] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const x = (e.clientX / window.innerWidth  - 0.5) * -20;
+      const y = (e.clientY / window.innerHeight - 0.5) * -14;
+      setParallax({ x, y });
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -16,7 +28,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white relative">
-      <AudioBackground />
+      <AudioBackground parallax={parallax} />
 
       {/* Header */}
       // inside return:
@@ -41,8 +53,9 @@ export default function ProjectsPage() {
           </div>
 
           <div className="bg-[#111827]/80 backdrop-blur-sm border border-[#1F2937] rounded-2xl p-8 opacity-50">
-            <h3 className="text-2xl font-bold text-[#0EA5A4] mb-4">Story & Podcast Studio</h3>
-            <p className="text-zinc-400">Coming Soon</p>
+            <h3 className="text-2xl font-bold text-[#A78BFA] mb-4">Generate Instruments</h3>
+            <p className="text-zinc-400">Create AI-generated acoustic instrument melodies — piano, guitar, tabla and more — that fit perfectly in your track.</p>
+            <p className="text-xs text-[#A78BFA] mt-4">Coming Soon</p>
           </div>
         </div>
       </div>

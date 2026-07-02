@@ -2,7 +2,11 @@
 
 import { useEffect, useRef } from "react";
 
-export default function AudioBackground() {
+interface AudioBackgroundProps {
+  parallax?: { x: number; y: number };
+}
+
+export default function AudioBackground({ parallax }: AudioBackgroundProps = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -161,6 +165,9 @@ export default function AudioBackground() {
       position: "fixed", top: 0, left: 0,
       width: "100vw", height: "100vh",
       zIndex: 0, pointerEvents: "none",
+      transform: parallax ? `translate(${parallax.x}px, ${parallax.y}px)` : undefined,
+      transition: "transform 0.15s ease-out",
+      willChange: "transform",
     }} />
   );
 }

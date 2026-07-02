@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { User, Sparkles, LogOut, ChevronDown, Shield, Bell } from "lucide-react";
+import { User, Sparkles, LogOut, ChevronDown, Shield, Bell, Settings, Sun, Moon } from "lucide-react";
 import { notifyLoginSummary } from "@/lib/usageTracking";
 
 interface NotificationRow {
@@ -32,6 +32,11 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
   const notifRef = useRef<HTMLDivElement>(null);
   const unreadCount = notifications.filter(n => !n.read).length;
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
       if (data.user?.email) setUserEmail(data.user.email);
@@ -43,7 +48,26 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
     });
     loadNotifications();
     notifyLoginSummary();
+
+    // Restore saved theme preference
+    const saved = localStorage.getItem("nokashi-theme");
+    if (saved === "light") {
+      document.documentElement.classList.add("theme-light");
+      setIsDarkMode(false);
+    }
   }, []);
+
+  const toggleTheme = () => {
+    const nextDark = !isDarkMode;
+    setIsDarkMode(nextDark);
+    if (nextDark) {
+      document.documentElement.classList.remove("theme-light");
+      localStorage.setItem("nokashi-theme", "dark");
+    } else {
+      document.documentElement.classList.add("theme-light");
+      localStorage.setItem("nokashi-theme", "light");
+    }
+  };
 
   const loadNotifications = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -76,6 +100,9 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
       }
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setNotifOpen(false);
+      }
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -186,6 +213,47 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
           )}
         </div>
 
+      {/* Settings */}
+        <div className="relative" ref={settingsRef}>
+          <button
+            onClick={() => setSettingsOpen(v => !v)}
+            className="flex items-center justify-center w-9 h-9 rounded-lg border border-[#1F2937] hover:border-[#374151] transition-colors"
+          >
+            <Settings size={16} className="text-zinc-400" />
+          </button>
+
+          {settingsOpen && (
+            <div className="absolute right-0 top-full mt-2 w-56 bg-[#111827] border border-[#1F2937] rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.4)] overflow-hidden animate-fade-in">
+              <div className="px-4 py-3 border-b border-[#1F2937]">
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Settings</p>
+              </div>
+
+              {/* Theme toggle */}
+              <button
+                onClick={() => { toggleTheme(); setSettingsOpen(false); }}
+                className="w-full flex items-center justify-between px-4 py-3 text-sm text-zinc-300 hover:bg-[#1F2937] transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  {isDarkMode
+                    ? <Sun size={16} className="text-zinc-500" />
+                    : <Moon size={16} className="text-zinc-500" />
+                  }
+                  {isDarkMode ? "Light Mode" : "Dark Mode"}
+                </div>
+                <div
+                  className="w-8 h-4 rounded-full relative transition-colors flex-shrink-0"
+                  style={{ backgroundColor: isDarkMode ? "#1F2937" : accentColor }}
+                >
+                  <div
+                    className="absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all"
+                    style={{ left: isDarkMode ? "2px" : "18px" }}
+                  />
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
+
       {/* User dropdown */}
       <div className="relative flex-shrink-0" ref={dropdownRef}>
         <button
@@ -221,6 +289,8 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
               <User size={16} className="text-zinc-500" />
               Profile
             </button>
+
+            
 
             <button
               onClick={() => { setDropdownOpen(false); router.push("/projects/upgrade"); }}
