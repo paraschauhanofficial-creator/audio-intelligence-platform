@@ -122,10 +122,10 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
   const initials = userEmail ? userEmail.slice(0, 2).toUpperCase() : "N";
 
   return (
-    <div className="relative z-20 flex items-center justify-between px-8 py-5 border-b border-[#1F2937]">
+    <div className="relative z-20 flex items-center justify-between px-8 py-5 border-b" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
       {/* Logo */}
       <h1 className="heading-brand text-xl font-bold flex-shrink-0">
-        <span className="text-white">NOKASHI</span>
+        <span style={{ color: "var(--text)" }}>NOKASHI</span>
         <span className="text-[#00B7FF]"> STUDIOS</span>
       </h1>
 
@@ -163,7 +163,8 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
         <div className="relative" ref={notifRef}>
           <button
             onClick={() => setNotifOpen(v => !v)}
-            className="relative flex items-center justify-center w-9 h-9 rounded-lg border border-[#1F2937] hover:border-[#374151] transition-colors"
+            className="relative flex items-center justify-center w-9 h-9 rounded-lg border transition-colors"
+            style={{ borderColor: "var(--border)" }}
           >
             <Bell size={16} className="text-zinc-400" />
             {unreadCount > 0 && (
@@ -174,7 +175,7 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
           </button>
 
           {notifOpen && (
-            <div className="absolute right-0 top-full mt-2 w-80 bg-[#111827] border border-[#1F2937] rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.4)] overflow-hidden animate-fade-in">
+            <div className="absolute right-0 top-full mt-2 w-80 rounded-xl overflow-hidden animate-fade-in" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 8px 24px var(--shadow)" }}>
               <div className="px-4 py-3 border-b border-[#1F2937] flex items-center justify-between">
                 <p className="text-sm font-semibold text-zinc-200">Notifications</p>
                 {unreadCount > 0 && (
@@ -192,15 +193,20 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
                     <button
                       key={n.id}
                       onClick={() => markAsRead(n.id)}
-                      className="w-full text-left px-4 py-3 border-b border-[#1F2937] last:border-0 hover:bg-[#1F293750] transition-colors"
-                      style={{ backgroundColor: n.read ? "transparent" : "#00B7FF08" }}
+                      className="w-full text-left px-4 py-3 last:border-0 transition-colors"
+                      style={{ 
+                        backgroundColor: n.read ? "transparent" : "#00B7FF08",
+                        borderBottom: "1px solid var(--border)"
+                      }}
+                     onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(128,128,128,0.1)"}
+                     onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                     >
                       <div className="flex items-start gap-2">
                         {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-[#00B7FF] mt-1.5 flex-shrink-0" />}
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-zinc-200">{n.title}</p>
-                          <p className="text-[11px] text-zinc-500 mt-0.5">{n.message}</p>
-                          <p className="text-[10px] text-zinc-700 mt-1">
+                          <p className="text-xs font-semibold" style={{ color: "var(--text)" }}>{n.title}</p>
+                          <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{n.message}</p>
+                          <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)", opacity: 0.6 }}>
                             {new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                           </p>
                         </div>
@@ -217,26 +223,30 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
         <div className="relative" ref={settingsRef}>
           <button
             onClick={() => setSettingsOpen(v => !v)}
-            className="flex items-center justify-center w-9 h-9 rounded-lg border border-[#1F2937] hover:border-[#374151] transition-colors"
+            className="flex items-center justify-center w-9 h-9 rounded-lg border transition-colors"
+            style={{ borderColor: "var(--border)" }}
           >
             <Settings size={16} className="text-zinc-400" />
           </button>
 
           {settingsOpen && (
-            <div className="absolute right-0 top-full mt-2 w-56 bg-[#111827] border border-[#1F2937] rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.4)] overflow-hidden animate-fade-in">
-              <div className="px-4 py-3 border-b border-[#1F2937]">
+            <div className="absolute right-0 top-full mt-2 w-56 rounded-xl overflow-hidden animate-fade-in" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 8px 24px var(--shadow)" }}>
+              <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
                 <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Settings</p>
               </div>
 
               {/* Theme toggle */}
               <button
                 onClick={() => { toggleTheme(); setSettingsOpen(false); }}
-                className="w-full flex items-center justify-between px-4 py-3 text-sm text-zinc-300 hover:bg-[#1F2937] transition-colors"
+                className="w-full flex items-center justify-between px-4 py-3 text-sm transition-colors"
+                style={{ color: "var(--text)" }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(128,128,128,0.1)"}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
               >
                 <div className="flex items-center gap-3">
                   {isDarkMode
-                    ? <Sun size={16} className="text-zinc-500" />
-                    : <Moon size={16} className="text-zinc-500" />
+                    ? <Sun size={16} style={{ color: "var(--text-muted)" }} />
+                    : <Moon size={16} style={{ color: "var(--text-muted)" }} />
                   }
                   {isDarkMode ? "Light Mode" : "Dark Mode"}
                 </div>
@@ -257,9 +267,10 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
       {/* User dropdown */}
       <div className="relative flex-shrink-0" ref={dropdownRef}>
         <button
-          onClick={() => setDropdownOpen(v => !v)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#1F2937] hover:border-[#374151] transition-all duration-200 group"
-        >
+            onClick={() => setDropdownOpen(v => !v)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border transition-all duration-200 group"
+            style={{ borderColor: "var(--border)" }}
+          >
           <div
             className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
             style={{ backgroundColor: accentColor + "20", color: accentColor }}
@@ -274,19 +285,22 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
         </button>
 
         {dropdownOpen && (
-          <div className="absolute right-0 top-full mt-2 w-56 bg-[#111827] border border-[#1F2937] rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.4)] overflow-hidden animate-fade-in">
+          <div className="absolute right-0 top-full mt-2 w-56 rounded-xl overflow-hidden animate-fade-in" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 8px 24px var(--shadow)" }}>
             {userEmail && (
-              <div className="px-4 py-3 border-b border-[#1F2937]">
-                <p className="text-xs text-zinc-500">Signed in as</p>
-                <p className="text-sm text-zinc-200 truncate mt-0.5">{userEmail}</p>
+              <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>Signed in as</p>
+                <p className="text-sm truncate mt-0.5" style={{ color: "var(--text)" }}>{userEmail}</p>
               </div>
             )}
 
             <button
               onClick={() => { setDropdownOpen(false); router.push("/projects/profile"); }}
-              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-[#1F2937] transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors"
+              style={{ color: "var(--text)" }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(128,128,128,0.1)"}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
             >
-              <User size={16} className="text-zinc-500" />
+              <User size={16} style={{ color: "var(--text-muted)" }} />
               Profile
             </button>
 
@@ -313,11 +327,13 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
               </button>
             )}
 
-            <div className="border-t border-[#1F2937]" />
+            <div style={{ borderTop: "1px solid var(--border)" }} />
 
             <button
               onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 transition-colors"
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.1)"}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
             >
               <LogOut size={16} />
               Log out

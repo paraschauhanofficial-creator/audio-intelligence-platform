@@ -6,8 +6,13 @@ interface AudioBackgroundProps {
   parallax?: { x: number; y: number };
 }
 
-export default function AudioBackground({ parallax }: AudioBackgroundProps = {}) {
+export default function AudioBackground({ parallax, lightMode = false }: AudioBackgroundProps & { lightMode?: boolean } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const lightModeRef = useRef(lightMode);
+
+  useEffect(() => {
+    lightModeRef.current = lightMode;
+  }, [lightMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -65,7 +70,7 @@ export default function AudioBackground({ parallax }: AudioBackgroundProps = {})
       t += 0.012;
       const w = W(), h = H();
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = "#0A0A0A";
+      ctx.fillStyle = lightModeRef.current ? "#F2EDE4" : "#0A0A0A";
       ctx.fillRect(0, 0, w, h);
 
       // Draw wave lines as dotted particle streams
@@ -143,14 +148,14 @@ export default function AudioBackground({ parallax }: AudioBackgroundProps = {})
 
       // Vignette — edges dark, centre clear
       const gv = ctx.createRadialGradient(w*0.5, h*0.5, 0, w*0.5, h*0.5, w*0.7);
-      gv.addColorStop(0, "rgba(10,10,10,0)");
-      gv.addColorStop(1, "rgba(10,10,10,0.85)");
+      gv.addColorStop(0, lightModeRef.current ? "rgba(242,237,228,0)" : "rgba(10,10,10,0)");
+      gv.addColorStop(1, lightModeRef.current ? "rgba(242,237,228,0.85)" : "rgba(10,10,10,0.85)");
       ctx.fillStyle = gv; ctx.fillRect(0, 0, w, h);
 
       // Top header fade
       const gt = ctx.createLinearGradient(0, 0, 0, h * 0.12);
-      gt.addColorStop(0, "rgba(10,10,10,0.95)");
-      gt.addColorStop(1, "rgba(10,10,10,0)");
+      gt.addColorStop(0, lightModeRef.current ? "rgba(242,237,228,0.95)" : "rgba(10,10,10,0.95)");
+      gt.addColorStop(1, lightModeRef.current ? "rgba(242,237,228,0)" : "rgba(10,10,10,0)");
       ctx.fillStyle = gt; ctx.fillRect(0, 0, w, h * 0.12);
 
       animId = requestAnimationFrame(frame);
