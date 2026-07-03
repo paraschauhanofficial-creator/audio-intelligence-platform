@@ -22,6 +22,7 @@ interface StemEntry {
 
 type Phase = "upload" | "fingerprinting" | "popup" | "saving";
 
+// Semantic category colors — NOT theme colors. Stay fixed in light and dark mode.
 const sectionColors: Record<StemSection, string> = {
   drums: "#F0A500", instruments: "#14D8C4", vocals: "#A78BFA", other: "#FF6B4A",
 };
@@ -77,7 +78,23 @@ export default function CreateStemsPage() {
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const refMixInputRef = useRef<HTMLInputElement>(null);
 
-  // Workflow-aware theme
+  // Theme — identical pattern to every other migrated page (see projects/page.tsx)
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("nokashi-theme");
+    setIsDarkMode(saved !== "light");
+    const observer = new MutationObserver(() => {
+      setIsDarkMode(!document.documentElement.classList.contains("theme-light"));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  const inputBg = isDarkMode ? "#0A0A0A" : "rgba(255,255,255,0.6)";
+  const hoverBorder = isDarkMode ? "#52525b" : "#a1a1aa";
+
+  // Workflow-aware accent — UNCHANGED logic. Do not hardcode either color.
   const isProducer   = sourceWorkflow === "producer_mode";
   const accentColor  = isProducer ? "#14D8C4" : "#00B7FF";
   const workflowLabel = isProducer ? "Producer Mode — Stems" : "AI Assisted — Stems";
@@ -237,21 +254,21 @@ export default function CreateStemsPage() {
   // above, so by the time planChecked is true and planAllowed is false,
   // a redirect is already in flight — render nothing to avoid a UI flash.
   if (!planChecked) return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white flex items-center justify-center">
-      <p className="text-sm text-zinc-500">Loading…</p>
+    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
+      <p className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</p>
     </div>
   );
   if (!planAllowed) return null;
 
   // ── UPLOAD PHASE ──────────────────────────────────────────────────────────
   if (phase === "upload") return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col">
-      <div className="h-[72px] border-b border-[#1F2937] px-8 flex items-center justify-between">
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
+      <div className="h-[72px] border-b px-8 flex items-center justify-between" style={{ borderColor: "var(--border)" }}>
         <div>
-          <h1 className="text-xl font-bold">New Stems Project</h1>
+          <h1 className="text-xl font-bold" style={{ color: "var(--text)" }}>New Stems Project</h1>
           <p className="text-xs mt-0.5" style={{ color: accentColor }}>{workflowLabel}</p>
         </div>
-        <button onClick={() => router.back()} className="px-4 py-2 rounded-lg border border-[#1F2937] text-sm">Cancel</button>
+        <button onClick={() => router.back()} className="px-4 py-2 rounded-lg border text-sm" style={{ borderColor: "var(--border)", color: "var(--text)" }}>Cancel</button>
       </div>
 
       <div className="flex-1 flex items-center justify-center p-8">
@@ -259,31 +276,32 @@ export default function CreateStemsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <label className="text-xs text-zinc-500 uppercase tracking-wide">Project Name *</label>
+              <label className="text-xs uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Project Name *</label>
               <input type="text" placeholder="My Stems Session" value={projectName} onChange={e => setProjectName(e.target.value)}
-                className="bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-3 text-sm focus:outline-none transition"
-                style={{ borderColor: undefined }}
-                onFocus={e => e.currentTarget.style.borderColor = accentColor}
-                onBlur={e => e.currentTarget.style.borderColor = "#1F2937"}/>
+                className="rounded-xl px-4 py-3 text-sm focus:outline-none transition border"
+                style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
+                onFocus={e => (e.currentTarget.style.borderColor = accentColor)}
+                onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}/>
             </div>
             <div className="flex flex-col gap-2">
-              <label className="text-xs text-zinc-500 uppercase tracking-wide">Genre</label>
+              <label className="text-xs uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Genre</label>
               <input type="text" placeholder="Hip-Hop, Pop, Rock..." value={genre} onChange={e => setGenre(e.target.value)}
-                className="bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-3 text-sm focus:outline-none transition"
-                onFocus={e => e.currentTarget.style.borderColor = accentColor}
-                onBlur={e => e.currentTarget.style.borderColor = "#1F2937"}/>
+                className="rounded-xl px-4 py-3 text-sm focus:outline-none transition border"
+                style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
+                onFocus={e => (e.currentTarget.style.borderColor = accentColor)}
+                onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}/>
             </div>
           </div>
 
           {/* Reference mix toggle */}
-          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4 flex items-center justify-between">
+          <div className="rounded-xl p-4 flex items-center justify-between border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
             <div>
-              <p className="text-sm font-semibold">Reference Mix <span className="text-zinc-500 font-normal">(optional)</span></p>
-              <p className="text-xs text-zinc-500 mt-1">Loaded muted in the DAW as a reference only. Not part of the signal chain.</p>
+              <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>Reference Mix <span className="font-normal" style={{ color: "var(--text-muted)" }}>(optional)</span></p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Loaded muted in the DAW as a reference only. Not part of the signal chain.</p>
             </div>
             <button onClick={() => setHasRefMix(v => !v)}
               className="w-11 h-6 rounded-full border transition relative"
-              style={{ borderColor: hasRefMix ? accentColor : "#1F2937", backgroundColor: hasRefMix ? accentColor + "30" : "#0A0A0A" }}>
+              style={{ borderColor: hasRefMix ? accentColor : "var(--border)", backgroundColor: hasRefMix ? accentColor + "30" : inputBg }}>
               <div className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
                 style={{ left: hasRefMix ? "20px" : "2px", backgroundColor: hasRefMix ? accentColor : "#52525b" }}/>
             </button>
@@ -291,11 +309,14 @@ export default function CreateStemsPage() {
 
           {hasRefMix && (
             <div onClick={() => refMixInputRef.current?.click()}
-              className="border border-dashed border-[#1F2937] rounded-xl p-4 flex items-center gap-3 cursor-pointer hover:border-zinc-600 transition">
+              className="border border-dashed rounded-xl p-4 flex items-center gap-3 cursor-pointer transition"
+              style={{ borderColor: "var(--border)" }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = hoverBorder)}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
               <span className="text-2xl">🎵</span>
               <div>
-                <p className="text-sm text-zinc-300">{refMixFile ? refMixFile.name : "Click to upload reference mix"}</p>
-                <p className="text-xs text-zinc-600">WAV, MP3, FLAC</p>
+                <p className="text-sm" style={{ color: "var(--text)" }}>{refMixFile ? refMixFile.name : "Click to upload reference mix"}</p>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>WAV, MP3, FLAC</p>
               </div>
               <input ref={refMixInputRef} type="file" accept="audio/*" className="hidden" onChange={e => setRefMixFile(e.target.files?.[0] ?? null)}/>
             </div>
@@ -303,12 +324,15 @@ export default function CreateStemsPage() {
 
           {/* Drop zone */}
           <div onDrop={onDrop} onDragOver={e => e.preventDefault()} onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-[#1F2937] rounded-2xl p-16 flex flex-col items-center gap-4 cursor-pointer hover:border-zinc-600 transition group">
+            className="border-2 border-dashed rounded-2xl p-16 flex flex-col items-center gap-4 cursor-pointer transition group"
+            style={{ borderColor: "var(--border)" }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = hoverBorder)}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
             <div className="text-5xl group-hover:scale-110 transition">🎚️</div>
             <div className="text-center">
-              <p className="text-lg font-semibold text-zinc-300">Drop your stems here</p>
-              <p className="text-sm text-zinc-500 mt-1">WAV, MP3, FLAC, AIFF — multiple files supported</p>
-              <p className="text-xs text-zinc-600 mt-1">Kick, Snare, Guitar, Vocals… all get auto-identified</p>
+              <p className="text-lg font-semibold" style={{ color: "var(--text)" }}>Drop your stems here</p>
+              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>WAV, MP3, FLAC, AIFF — multiple files supported</p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Kick, Snare, Guitar, Vocals… all get auto-identified</p>
             </div>
             <div className="px-6 py-2 rounded-lg text-sm font-semibold" style={{ backgroundColor: accentColor, color: "#000" }}>
               Browse Files
@@ -322,28 +346,28 @@ export default function CreateStemsPage() {
 
   // ── FINGERPRINTING PHASE ──────────────────────────────────────────────────
   if (phase === "fingerprinting") return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col items-center justify-center gap-6">
+    <div className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
       <div className="text-4xl">🔬</div>
       <div className="text-center">
         <p className="text-xl font-semibold" style={{ color: accentColor }}>Identifying Stems</p>
-        <p className="text-sm text-zinc-400 mt-2">{fingerprintMsg}</p>
+        <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>{fingerprintMsg}</p>
       </div>
-      <div className="w-80 h-2 bg-[#1F2937] rounded-full overflow-hidden">
+      <div className="w-80 h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
         <div className="h-full rounded-full transition-all" style={{ width: `${fingerprintPct}%`, backgroundColor: accentColor }}/>
       </div>
-      <p className="text-xs text-zinc-600">{fingerprintPct}%</p>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>{fingerprintPct}%</p>
     </div>
   );
 
   // ── SAVING PHASE ──────────────────────────────────────────────────────────
   if (phase === "saving") return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col items-center justify-center gap-6">
+    <div className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
       <div className="text-4xl">⬆️</div>
       <div className="text-center">
         <p className="text-xl font-semibold" style={{ color: accentColor }}>Saving Stems</p>
-        <p className="text-sm text-zinc-400 mt-2">{saveMsg}</p>
+        <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>{saveMsg}</p>
       </div>
-      <div className="w-80 h-2 bg-[#1F2937] rounded-full overflow-hidden">
+      <div className="w-80 h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
         <div className="h-full rounded-full animate-pulse" style={{ width: "60%", backgroundColor: accentColor }}/>
       </div>
     </div>
@@ -353,20 +377,20 @@ export default function CreateStemsPage() {
   const needsReviewCount = stems.filter(s => s.identification.needsReview && !s.overrideSection).length;
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col">
-      <div className="h-[72px] border-b border-[#1F2937] px-8 flex items-center justify-between flex-shrink-0">
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
+      <div className="h-[72px] border-b px-8 flex items-center justify-between flex-shrink-0" style={{ borderColor: "var(--border)" }}>
         <div>
-          <h1 className="text-xl font-bold">Stem Identification</h1>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <h1 className="text-xl font-bold" style={{ color: "var(--text)" }}>Stem Identification</h1>
+          <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
             {stems.length} stems detected ·{" "}
             {needsReviewCount > 0
-              ? <span className="text-[#FF6B4A]">{needsReviewCount} need review</span>
+              ? <span style={{ color: "#FF6B4A" }}>{needsReviewCount} need review</span>
               : <span style={{ color: accentColor }}>All identified</span>}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {saveMsg && <span className="text-sm text-[#FF6B4A]">{saveMsg}</span>}
-          <button onClick={() => { setPhase("upload"); setStems([]); }} className="px-4 py-2 rounded-lg border border-[#1F2937] text-sm">Start Over</button>
+          {saveMsg && <span className="text-sm" style={{ color: "#FF6B4A" }}>{saveMsg}</span>}
+          <button onClick={() => { setPhase("upload"); setStems([]); }} className="px-4 py-2 rounded-lg border text-sm" style={{ borderColor: "var(--border)", color: "var(--text)" }}>Start Over</button>
           <button onClick={handleConfirm} disabled={saving || !projectName.trim()}
             className="px-6 py-2 rounded-lg font-semibold text-sm disabled:opacity-40 transition"
             style={{ backgroundColor: accentColor, color: "#000" }}>
@@ -376,10 +400,12 @@ export default function CreateStemsPage() {
       </div>
 
       {!projectName.trim() && (
-        <div className="mx-8 mt-4 px-4 py-3 bg-[#FF6B4A15] border border-[#FF6B4A40] rounded-xl text-sm text-[#FF6B4A]">
+        <div className="mx-8 mt-4 px-4 py-3 rounded-xl text-sm"
+          style={{ backgroundColor: "#FF6B4A15", border: "1px solid #FF6B4A40", color: "#FF6B4A" }}>
           ⚠️ Enter a project name before confirming.
           <input type="text" placeholder="Project name..." value={projectName} onChange={e => setProjectName(e.target.value)}
-            className="ml-4 bg-transparent border-b border-[#FF6B4A] focus:outline-none text-white placeholder-zinc-600 text-sm"/>
+            className="ml-4 bg-transparent border-b focus:outline-none text-sm"
+            style={{ borderColor: "#FF6B4A", color: "var(--text)" }}/>
         </div>
       )}
 
@@ -394,7 +420,7 @@ export default function CreateStemsPage() {
                 <div className="flex items-center gap-2 mb-2 mt-4">
                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }}/>
                   <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{SECTION_LABELS[section]}</span>
-                  <span className="text-xs text-zinc-600">({sectionStems.length} stems)</span>
+                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>({sectionStems.length} stems)</span>
                 </div>
                 <div className="space-y-2">
                   {sectionStems.map(entry => {
@@ -404,26 +430,27 @@ export default function CreateStemsPage() {
                     const needsReview = entry.identification.needsReview && !entry.overrideSection;
                     return (
                       <div key={entry.id}
-                        className={`bg-[#111827] rounded-xl border p-4 flex items-center gap-4 transition ${needsReview ? "border-[#FF6B4A60]" : "border-[#1F2937]"}`}>
-                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${needsReview ? "bg-[#FF6B4A]" : ""}`} style={!needsReview ? { backgroundColor: accentColor } : {}}/>
+                        className="rounded-xl border p-4 flex items-center gap-4 transition"
+                        style={{ backgroundColor: "var(--surface)", borderColor: needsReview ? "#FF6B4A60" : "var(--border)" }}>
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: needsReview ? "#FF6B4A" : accentColor }}/>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate text-zinc-200">{entry.file.name}</p>
+                          <p className="text-sm font-semibold truncate" style={{ color: "var(--text)" }}>{entry.file.name}</p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: col + "20", color: col }}>
                               {SECTION_LABELS[sec]}
                             </span>
-                            <span className="text-[10px] text-zinc-400">
+                            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
                               {SLOT_LABELS[slot.replace(/_\d+$/, "")] ?? slot}
                               {entry.identification.slotIndex > 1 ? ` ${entry.identification.slotIndex}` : ""}
                             </span>
-                            <span className="text-[10px] text-zinc-600">via {entry.identification.method}</span>
+                            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>via {entry.identification.method}</span>
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-1 flex-shrink-0 w-20">
-                          <span className="text-[10px] text-zinc-500">
+                          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
                             {entry.identification.method === "unidentified" ? "Unknown" : `${Math.round(entry.identification.confidence * 100)}%`}
                           </span>
-                          <div className="w-full h-1 bg-[#1F2937] rounded-full overflow-hidden">
+                          <div className="w-full h-1 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
                             <div className="h-full rounded-full" style={{
                               width: `${entry.identification.confidence * 100}%`,
                               backgroundColor: entry.identification.confidence > 0.75 ? "#14D8C4" : entry.identification.confidence > 0.50 ? "#F0A500" : "#FF6B4A",
@@ -431,30 +458,36 @@ export default function CreateStemsPage() {
                           </div>
                         </div>
                         <select value={sec} onChange={e => setSection(entry.id, e.target.value as StemSection)}
-                          className="bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:outline-none flex-shrink-0">
+                          className="rounded-lg px-2 py-1.5 text-xs focus:outline-none flex-shrink-0 border"
+                          style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text-muted)" }}>
                           {(["drums","instruments","vocals","other"] as StemSection[]).map(s => <option key={s} value={s}>{SECTION_LABELS[s]}</option>)}
                         </select>
                         <select value={slot.replace(/_\d+$/, "")} onChange={e => setSlot(entry.id, e.target.value)}
-                          className="bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:outline-none flex-shrink-0">
+                          className="rounded-lg px-2 py-1.5 text-xs focus:outline-none flex-shrink-0 border"
+                          style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text-muted)" }}>
                           {SLOT_OPTIONS[sec].map(s => <option key={s} value={s}>{SLOT_LABELS[s] ?? s}</option>)}
                           <option value="misc">Other</option>
                         </select>
                         <select
                           value={entry.mixRole}
                           onChange={e => setMixRole(entry.id, e.target.value as "main" | "supporting")}
-                          className="bg-[#0A0A0A] border rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none flex-shrink-0 transition"
+                          className="rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none flex-shrink-0 transition border"
                           style={{
-                            borderColor: entry.mixRole === "main" ? accentColor : "#1F2937",
-                            color: entry.mixRole === "main" ? accentColor : "#71717a",
+                            backgroundColor: inputBg,
+                            borderColor: entry.mixRole === "main" ? accentColor : "var(--border)",
+                            color: entry.mixRole === "main" ? accentColor : "var(--text-muted)",
                           }}
                         >
                           <option value="supporting">Supporting</option>
                           <option value="main">Main</option>
                         </select>
                         {entry.identification.runKeyDetection && (
-                          <span className="text-[9px] border border-[#14D8C440] text-[#14D8C4] px-1.5 py-0.5 rounded flex-shrink-0">Key ✓</span>
+                          <span className="text-[9px] border px-1.5 py-0.5 rounded flex-shrink-0" style={{ borderColor: "#14D8C440", color: "#14D8C4" }}>Key ✓</span>
                         )}
-                        <button onClick={() => removeEntry(entry.id)} className="text-zinc-600 hover:text-[#FF6B4A] transition text-sm flex-shrink-0">✕</button>
+                        <button onClick={() => removeEntry(entry.id)} className="transition text-sm flex-shrink-0"
+                          style={{ color: "var(--text-muted)" }}
+                          onMouseEnter={e => (e.currentTarget.style.color = "#FF6B4A")}
+                          onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}>✕</button>
                       </div>
                     );
                   })}
@@ -464,7 +497,10 @@ export default function CreateStemsPage() {
           })}
 
           <div onClick={() => fileInputRef.current?.click()}
-            className="mt-6 border border-dashed border-[#1F2937] rounded-xl p-6 flex items-center justify-center gap-3 cursor-pointer hover:border-zinc-600 transition text-zinc-500 hover:text-zinc-300">
+            className="mt-6 border border-dashed rounded-xl p-6 flex items-center justify-center gap-3 cursor-pointer transition"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = hoverBorder; e.currentTarget.style.color = "var(--text)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}>
             <span className="text-xl">+</span>
             <span className="text-sm">Add more stems</span>
             <input ref={fileInputRef} type="file" accept="audio/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)}/>
