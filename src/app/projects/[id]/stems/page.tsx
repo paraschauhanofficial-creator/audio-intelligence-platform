@@ -43,11 +43,12 @@ interface StemProgress {
   [stemId: string]: { stage: string; message: string; percent: number; };
 }
 
+// Semantic category colors — NOT theme colors, NOT workflow colors. Fixed in light and dark mode.
 const sectionColors: Record<string, string> = {
   drums: "#F0A500", instruments: "#14D8C4", vocals: "#A78BFA", other: "#FF6B4A",
 };
 
-const trackColor  = "#14D8C4";
+// masterColor is semantic (matches "AI Master = gold" everywhere else) — fixed.
 const masterColor = "#F0A500";
 
 function displaySlot(stem: StemRecord): string {
@@ -80,6 +81,24 @@ export default function StemsProjectPage() {
   const [error,            setError]            = useState("");
 
   const analysisRef = useRef(false);
+
+  // Theme — identical pattern to every other migrated page (see projects/page.tsx)
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("nokashi-theme");
+    setIsDarkMode(saved !== "light");
+    const observer = new MutationObserver(() => {
+      setIsDarkMode(!document.documentElement.classList.contains("theme-light"));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  // Workflow-aware accent — same pattern as accentColor on every other page.
+  // FIX: this was previously a hardcoded "#14D8C4" regardless of workflow,
+  // so AI-Assisted stems projects (cyan everywhere else) showed teal here.
+  const trackColor = (project?.workflow === "producer_mode_stems") ? "#14D8C4" : "#00B7FF";
 
   useEffect(() => { loadProject(); }, []);
 
@@ -436,60 +455,60 @@ export default function StemsProjectPage() {
     const pct = Math.max(0, Math.min(100, ((value + 60) / 60) * 100));
     return (
       <div className="flex flex-col items-center gap-1" style={{ width: 20 }}>
-        <div className="w-2 bg-[#1F2937] rounded-full relative overflow-hidden" style={{ height: 32 }}>
+        <div className="w-2 rounded-full relative overflow-hidden" style={{ height: 32, backgroundColor: "var(--border)" }}>
           <div className="absolute bottom-0 left-0 right-0 rounded-full"
             style={{ height: `${pct}%`, backgroundColor: color, transition: "height 0.3s" }}/>
         </div>
-        <span className="text-[7px] text-zinc-600">{label}</span>
+        <span className="text-[7px]" style={{ color: "var(--text-muted)" }}>{label}</span>
       </div>
     );
   };
 
   if (!project) return (
-    <div className="h-screen bg-[#0A0A0A] text-white flex items-center justify-center">
+    <div className="h-screen flex items-center justify-center" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
       <div className="text-center">
         <div className="text-4xl mb-4">🎚️</div>
-        <p className="text-zinc-400">{error || "Loading project..."}</p>
+        <p style={{ color: "var(--text-muted)" }}>{error || "Loading project..."}</p>
       </div>
     </div>
   );
 
   // Mixing/mastering overlay
   if (mixingRunning) return (
-    <div className="h-screen bg-[#0A0A0A] text-white flex flex-col items-center justify-center gap-6">
+    <div className="h-screen flex flex-col items-center justify-center gap-6" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
       <div className="text-5xl">🎛️</div>
       <div className="text-center">
         <p className="text-2xl font-bold" style={{ color: masterColor }}>AI Mixing & Mastering</p>
-        <p className="text-sm text-zinc-400 mt-2">Summing stems and running Aura Master...</p>
+        <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>Summing stems and running Aura Master...</p>
       </div>
-      <div className="w-80 h-2 bg-[#1F2937] rounded-full overflow-hidden">
+      <div className="w-80 h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
         <div className="h-full rounded-full animate-pulse" style={{ width: "70%", backgroundColor: masterColor }}/>
       </div>
-      <p className="text-xs text-zinc-500">This may take a minute for large sessions</p>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>This may take a minute for large sessions</p>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col">
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
 
       {/* Header */}
-      <div className="h-[72px] border-b border-[#1F2937] px-8 flex items-center justify-between flex-shrink-0">
+      <div className="h-[72px] border-b px-8 flex items-center justify-between flex-shrink-0" style={{ borderColor: "var(--border)" }}>
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold truncate max-w-md">{project.name}</h1>
+            <h1 className="text-xl font-bold truncate max-w-md" style={{ color: "var(--text)" }}>{project.name}</h1>
             <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border"
               style={{ color: trackColor, borderColor: trackColor + "40", backgroundColor: trackColor + "15" }}>
               Stems
             </span>
             {project.genre && (
-              <span className="text-[10px] text-zinc-500 border border-[#1F2937] px-2 py-0.5 rounded">
+              <span className="text-[10px] border px-2 py-0.5 rounded" style={{ color: "var(--text-muted)", borderColor: "var(--border)" }}>
                 {project.genre}
               </span>
             )}
           </div>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
             {stems.length} stems · {analysedCount} analysed
-            {errorCount > 0 && <span className="text-[#FF6B4A] ml-2">· {errorCount} errors</span>}
+            {errorCount > 0 && <span style={{ color: "#FF6B4A" }} className="ml-2">· {errorCount} errors</span>}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -501,7 +520,7 @@ export default function StemsProjectPage() {
             </button>
           )}
           <button onClick={() => router.push("/projects/list")}
-            className="px-4 py-2 rounded-lg border border-[#1F2937] text-sm">
+            className="px-4 py-2 rounded-lg border text-sm" style={{ borderColor: "var(--border)", color: "var(--text)" }}>
             My Projects
           </button>
         </div>
@@ -509,7 +528,7 @@ export default function StemsProjectPage() {
 
       {/* Overall progress */}
       {!analysisComplete && (
-        <div className="px-8 py-4 border-b border-[#1F2937] flex-shrink-0">
+        <div className="px-8 py-4 border-b flex-shrink-0" style={{ borderColor: "var(--border)" }}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: trackColor }}/>
@@ -519,9 +538,9 @@ export default function StemsProjectPage() {
                   : "Preparing analysis..."}
               </span>
             </div>
-            <span className="text-sm font-mono text-zinc-400">{totalProgress}%</span>
+            <span className="text-sm font-mono" style={{ color: "var(--text-muted)" }}>{totalProgress}%</span>
           </div>
-          <div className="w-full h-2 bg-[#1F2937] rounded-full overflow-hidden">
+          <div className="w-full h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
             <div className="h-full rounded-full transition-all duration-300"
               style={{ width: `${totalProgress}%`, backgroundColor: trackColor }}/>
           </div>
@@ -529,13 +548,13 @@ export default function StemsProjectPage() {
       )}
 
       {analysisComplete && (
-        <div className="px-8 py-3 border-b border-[#1F2937] flex-shrink-0 flex items-center gap-3"
-          style={{ backgroundColor: trackColor + "08" }}>
+        <div className="px-8 py-3 border-b flex-shrink-0 flex items-center gap-3"
+          style={{ borderColor: "var(--border)", backgroundColor: trackColor + "08" }}>
           <span className="text-lg">✅</span>
           <span className="text-sm font-semibold" style={{ color: trackColor }}>
             All stems analysed — mixing & mastering in progress...
           </span>
-          <span className="text-xs text-zinc-500">{analysedCount}/{stems.length} stems</span>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>{analysedCount}/{stems.length} stems</span>
         </div>
       )}
 
@@ -551,10 +570,10 @@ export default function StemsProjectPage() {
                   <h2 className="text-sm font-bold uppercase tracking-wider" style={{ color }}>
                     {SECTION_LABELS[section as StemSection]}
                   </h2>
-                  <span className="text-xs text-zinc-600">
+                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>
                     {sectionStems.filter(s => s.processing_stage === "analysed").length}/{sectionStems.length} done
                   </span>
-                  <div className="flex-1 h-px bg-[#1F2937]"/>
+                  <div className="flex-1 h-px" style={{ backgroundColor: "var(--border)" }}/>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3">
@@ -563,12 +582,12 @@ export default function StemsProjectPage() {
                     const isDone    = stem.processing_stage === "analysed";
                     const isError   = stem.processing_stage === "error";
                     const isActive  = stem.processing_stage === "analysing";
-                    const stemColor = isDone ? color : isError ? "#FF6B4A" : isActive ? trackColor : "#1F2937";
+                    const stemColor = isDone ? color : isError ? "#FF6B4A" : isActive ? trackColor : "var(--border)";
 
                     return (
                       <div key={stem.id}
-                        className="bg-[#111827] rounded-2xl border p-5 transition"
-                        style={{ borderColor: stemColor + (isDone ? "60" : isActive ? "80" : "30") }}>
+                        className="rounded-2xl border p-5 transition"
+                        style={{ backgroundColor: "var(--surface)", borderColor: isDone || isError || isActive ? stemColor + (isDone ? "60" : "80") : "var(--border)" }}>
                         <div className="flex items-start gap-4">
                           <div className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg"
                             style={{ backgroundColor: stemColor + "20" }}>
@@ -576,8 +595,8 @@ export default function StemsProjectPage() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-semibold text-sm text-zinc-200">{displaySlot(stem)}</span>
-                              <span className="text-[10px] text-zinc-500 truncate">{stem.original_name}</span>
+                              <span className="font-semibold text-sm" style={{ color: "var(--text)" }}>{displaySlot(stem)}</span>
+                              <span className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>{stem.original_name}</span>
                               <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-semibold"
                                 style={{ backgroundColor: color + "20", color }}>
                                 {stageLabel(stem.processing_stage)}
@@ -585,11 +604,11 @@ export default function StemsProjectPage() {
                             </div>
                             {isActive && (
                               <div className="mb-2">
-                                <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                                <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--text-muted)" }}>
                                   <span>{prog?.message ?? "Starting..."}</span>
                                   <span>{prog?.percent ?? 0}%</span>
                                 </div>
-                                <div className="w-full h-1.5 bg-[#1F2937] rounded-full overflow-hidden">
+                                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
                                   <div className="h-full rounded-full transition-all"
                                     style={{ width: `${prog?.percent ?? 0}%`, backgroundColor: trackColor }}/>
                                 </div>
@@ -599,37 +618,37 @@ export default function StemsProjectPage() {
                               <div className="flex flex-wrap gap-4 mt-2">
                                 {stem.tempo && (
                                   <div className="flex flex-col">
-                                    <span className="text-[9px] text-zinc-600 uppercase">BPM</span>
+                                    <span className="text-[9px] uppercase" style={{ color: "var(--text-muted)" }}>BPM</span>
                                     <span className="text-sm font-bold font-mono" style={{ color }}>{stem.tempo}</span>
                                   </div>
                                 )}
                                 {stem.musical_key && (
                                   <div className="flex flex-col">
-                                    <span className="text-[9px] text-zinc-600 uppercase">Key</span>
+                                    <span className="text-[9px] uppercase" style={{ color: "var(--text-muted)" }}>Key</span>
                                     <span className="text-sm font-bold" style={{ color }}>{stem.musical_key} {stem.scale}</span>
                                   </div>
                                 )}
                                 {stem.integrated_lufs != null && (
                                   <div className="flex flex-col">
-                                    <span className="text-[9px] text-zinc-600 uppercase">LUFS</span>
+                                    <span className="text-[9px] uppercase" style={{ color: "var(--text-muted)" }}>LUFS</span>
                                     <span className="text-sm font-bold font-mono" style={{ color }}>{stem.integrated_lufs.toFixed(1)}</span>
                                   </div>
                                 )}
                                 {stem.true_peak != null && (
                                   <div className="flex flex-col">
-                                    <span className="text-[9px] text-zinc-600 uppercase">Peak</span>
+                                    <span className="text-[9px] uppercase" style={{ color: "var(--text-muted)" }}>Peak</span>
                                     <span className="text-sm font-bold font-mono" style={{ color }}>{stem.true_peak.toFixed(1)} dBTP</span>
                                   </div>
                                 )}
                                 {stem.dynamic_range != null && (
                                   <div className="flex flex-col">
-                                    <span className="text-[9px] text-zinc-600 uppercase">DR</span>
+                                    <span className="text-[9px] uppercase" style={{ color: "var(--text-muted)" }}>DR</span>
                                     <span className="text-sm font-bold font-mono" style={{ color }}>{stem.dynamic_range.toFixed(1)} dB</span>
                                   </div>
                                 )}
                                 {stem.stereo_width != null && (
                                   <div className="flex flex-col">
-                                    <span className="text-[9px] text-zinc-600 uppercase">Width</span>
+                                    <span className="text-[9px] uppercase" style={{ color: "var(--text-muted)" }}>Width</span>
                                     <span className="text-sm font-bold font-mono" style={{ color }}>{stem.stereo_width.toFixed(0)}%</span>
                                   </div>
                                 )}
@@ -642,18 +661,18 @@ export default function StemsProjectPage() {
                                 </div>
                               </div>
                             )}
-                            {isError && <p className="text-xs text-[#FF6B4A] mt-1">{stem.current_task}</p>}
+                            {isError && <p className="text-xs mt-1" style={{ color: "#FF6B4A" }}>{stem.current_task}</p>}
                           </div>
                           <div className="flex-shrink-0 text-right">
-                            <div className="text-[9px] text-zinc-600 mb-1">ID Confidence</div>
+                            <div className="text-[9px] mb-1" style={{ color: "var(--text-muted)" }}>ID Confidence</div>
                             <div className="flex items-center gap-1.5">
-                              <div className="w-16 h-1 bg-[#1F2937] rounded-full overflow-hidden">
+                              <div className="w-16 h-1 rounded-full overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
                                 <div className="h-full rounded-full" style={{
                                   width: `${(stem.confidence ?? 0) * 100}%`,
                                   backgroundColor: (stem.confidence ?? 0) > 0.75 ? "#14D8C4" : (stem.confidence ?? 0) > 0.50 ? "#F0A500" : "#FF6B4A",
                                 }}/>
                               </div>
-                              <span className="text-[10px] font-mono text-zinc-500">{Math.round((stem.confidence ?? 0) * 100)}%</span>
+                              <span className="text-[10px] font-mono" style={{ color: "var(--text-muted)" }}>{Math.round((stem.confidence ?? 0) * 100)}%</span>
                             </div>
                           </div>
                         </div>
@@ -666,14 +685,14 @@ export default function StemsProjectPage() {
           })}
 
           {project.has_reference_mix && (
-            <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-5 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg bg-[#1F2937]">🎵</div>
+            <div className="rounded-2xl border p-5 flex items-center gap-4" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg" style={{ backgroundColor: "var(--border)" }}>🎵</div>
               <div>
-                <p className="text-sm font-semibold text-zinc-300">Reference Mix</p>
-                <p className="text-xs text-zinc-500 mt-0.5">Loaded muted in the DAW as reference. Not part of the signal chain.</p>
+                <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>Reference Mix</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Loaded muted in the DAW as reference. Not part of the signal chain.</p>
               </div>
               <div className="ml-auto">
-                <span className="text-[10px] border border-[#1F2937] text-zinc-600 px-2 py-1 rounded">MUTED</span>
+                <span className="text-[10px] border px-2 py-1 rounded" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>MUTED</span>
               </div>
             </div>
           )}

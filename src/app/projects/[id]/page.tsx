@@ -86,6 +86,21 @@ const masterAudioBlobRef = useRef<string>("");
   const fileInputRef =
   useRef<HTMLInputElement>(null);
 
+  // Theme — identical pattern to every other migrated page (see projects/page.tsx)
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("nokashi-theme");
+    setIsDarkMode(saved !== "light");
+    const observer = new MutationObserver(() => {
+      setIsDarkMode(!document.documentElement.classList.contains("theme-light"));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  const inputBg = isDarkMode ? "#0A0A0A" : "rgba(255,255,255,0.6)";
+
   useEffect(() => {
     loadProject();
   }, []);
@@ -662,6 +677,18 @@ setEditPrompt(
   filePath: string,
   fileName: string
 ) => {
+  // Check browser cache first — zero egress if hit
+  const cached = await getCachedAudio(filePath);
+  if (cached) {
+    console.log("[AudioCache] Uploaded file preview hit:", filePath);
+    if (previewBlobUrlRef.current) URL.revokeObjectURL(previewBlobUrlRef.current);
+    const blobUrl = URL.createObjectURL(cached);
+    previewBlobUrlRef.current = blobUrl;
+    setUploadedPreviewUrl(blobUrl);
+    setUploadedPreviewName(fileName);
+    return;
+  }
+
   const budgetCheck = await checkEgressBudget();
   if (!budgetCheck.allowed) {
     setEgressBlocked(true);
@@ -685,6 +712,8 @@ setEditPrompt(
   try {
     const blob = await fetchAndLogAudio(data.signedUrl, "preview_play", project?.id);
     checkUsageSlabsAndNotify(); // fire-and-forget
+    // Store in cache for all future uses — this session and beyond
+    setCachedAudio(filePath, blob);
     if (previewBlobUrlRef.current) URL.revokeObjectURL(previewBlobUrlRef.current);
     const blobUrl = URL.createObjectURL(blob);
     previewBlobUrlRef.current = blobUrl;
@@ -1046,21 +1075,21 @@ const workflowLabel =
 
     
     return (
-      <div className="min-h-screen bg-[#0A0A0A] text-white flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
         Loading...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white">
+    <div className="min-h-screen" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
 
       {/* Header */}
 
       <Navbar accentColor={accentColor} />
 
       {egressBlocked && (
-        <div className="bg-[#FF6B4A15] border-b border-[#FF6B4A40] px-8 py-3 text-center text-sm text-[#FF6B4A]">
+        <div className="px-8 py-3 text-center text-sm" style={{ backgroundColor: "#FF6B4A15", borderBottom: "1px solid #FF6B4A40", color: "#FF6B4A" }}>
           You've hit your monthly preview/playback limit. It resets on the 1st of next month —{" "}
           <button onClick={() => router.push("/projects/upgrade")} className="underline font-semibold">
             upgrade for more
@@ -1086,19 +1115,19 @@ const workflowLabel =
         )
       }
       className="
-        bg-[#111827]
-        border border-[#1F2937]
         rounded-lg
         px-3 py-2
         text-3xl
         font-bold
         w-full
+        border
       "
+      style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", color: "var(--text)" }}
     />
 
   ) : (
 
-    <h2 className="text-4xl font-bold">
+    <h2 className="text-4xl font-bold" style={{ color: "var(--text)" }}>
       {project.name}
     </h2>
 
@@ -1174,8 +1203,8 @@ const workflowLabel =
         px-4 py-2
         rounded-lg
         border
-        border-[#1F2937]
       "
+      style={{ borderColor: "var(--border)", color: "var(--text)" }}
     >
       Edit
     </button>
@@ -1187,18 +1216,17 @@ const workflowLabel =
 
 
 <div className="
-bg-[#111827]
-border border-[#1F2937]
 rounded-xl
 px-5 py-2
 w-full
 max-w-[320px]
-">
+border
+" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
 
   <div className="grid grid-cols-3 gap-4 text-center">
 
   <div>
-    <p className="text-[10px] text-zinc-500 uppercase">
+    <p className="text-[10px] uppercase" style={{ color: "var(--text-muted)" }}>
       Tempo
     </p>
 
@@ -1213,7 +1241,7 @@ max-w-[320px]
   </div>
 
   <div>
-    <p className="text-[10px] text-zinc-500 uppercase">
+    <p className="text-[10px] uppercase" style={{ color: "var(--text-muted)" }}>
       Signature
     </p>
 
@@ -1228,7 +1256,7 @@ max-w-[320px]
   </div>
 
   <div>
-    <p className="text-[10px] text-zinc-500 uppercase">
+    <p className="text-[10px] uppercase" style={{ color: "var(--text-muted)" }}>
       Key
     </p>
 
@@ -1248,9 +1276,9 @@ max-w-[320px]
 
 
 
-  <div className="mt-3 pt-2 border-t border-[#1F2937]">
+  <div className="mt-3 pt-2 border-t" style={{ borderColor: "var(--border)" }}>
 
-    <div className="flex items-center justify-center gap-3 text-[9.5px] text-zinc-500">
+    <div className="flex items-center justify-center gap-3 text-[9.5px]" style={{ color: "var(--text-muted)" }}>
 
   <span>
     {project.sample_rate
@@ -1278,28 +1306,28 @@ max-w-[320px]
 
   <div className="grid grid-cols-3 gap-3 w-full lg:w-[420px]">
 
-    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-5 py-3">
-      <p className="text-xs text-zinc-400">
+    <div className="rounded-xl px-5 py-3 border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
         Files
       </p>
 
-      <p className="text-lg font-semibold">
+      <p className="text-lg font-semibold" style={{ color: "var(--text)" }}>
         {files.length}
       </p>
     </div>
 
-    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-5 py-3">
-      <p className="text-xs text-zinc-400">
+    <div className="rounded-xl px-5 py-3 border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
         Days Left
       </p>
 
-      <p className="text-lg font-semibold">
+      <p className="text-lg font-semibold" style={{ color: "var(--text)" }}>
         {daysRemaining}
       </p>
     </div>
 
-    <div className="bg-[#111827] border border-[#1F2937] rounded-xl px-5 py-3">
-      <p className="text-xs text-zinc-400">
+    <div className="rounded-xl px-5 py-3 border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
         Workflow
       </p>
 
@@ -1320,16 +1348,16 @@ max-w-[320px]
         
 
 
-<div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 mb-6">
+<div className="rounded-2xl p-6 mb-6 border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
 
-  <h3 className="text-xl font-semibold mb-4">
+  <h3 className="text-xl font-semibold mb-4" style={{ color: "var(--text)" }}>
     Project Details
   </h3>
 
   <div className="space-y-4">
 
     <div>
-      <p className="text-xs text-zinc-500 mb-1">
+      <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
         Genre
       </p>
 
@@ -1343,11 +1371,11 @@ max-w-[320px]
           }
           className="
             w-full
-            bg-[#0A0A0A]
-            border border-[#1F2937]
             rounded-lg
             px-3 py-2
+            border
           "
+          style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
         >
           <option value="">Select Genre</option>
           <option>Pop</option>
@@ -1361,12 +1389,12 @@ max-w-[320px]
           <option>Other</option>
         </select>
       ) : (
-        <p>{project.genre || "--"}</p>
+        <p style={{ color: "var(--text)" }}>{project.genre || "--"}</p>
       )}
     </div>
 
     <div>
-      <p className="text-xs text-zinc-500 mb-1">
+      <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
         Creative Direction
       </p>
 
@@ -1381,14 +1409,14 @@ max-w-[320px]
           }
           className="
             w-full
-            bg-[#0A0A0A]
-            border border-[#1F2937]
             rounded-lg
             px-3 py-2
+            border
           "
+          style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
         />
       ) : (
-        <p className="text-zinc-400 whitespace-pre-wrap">
+        <p className="whitespace-pre-wrap" style={{ color: "var(--text-muted)" }}>
           {project.project_prompt ||
             "No creative direction provided"}
         </p>
@@ -1408,11 +1436,11 @@ max-w-[320px]
 
   {/* Progress */}
 
-  <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
+  <div className="rounded-2xl p-6 border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
 
     <div className="flex justify-between mb-4">
 
-      <h3 className="text-xl font-semibold">
+      <h3 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
         Processing Status
       </h3>
 
@@ -1435,7 +1463,7 @@ max-w-[320px]
 
     </div>
 
-    <div className="w-full bg-[#1F2937] rounded-full h-4">
+    <div className="w-full rounded-full h-4" style={{ backgroundColor: "var(--border)" }}>
       <div
   className="h-4 rounded-full"
   style={{
@@ -1445,7 +1473,7 @@ max-w-[320px]
       />
     </div>
 
-    <div className="grid grid-cols-5 mt-4 text-center text-xs text-zinc-400">
+    <div className="grid grid-cols-5 mt-4 text-center text-xs" style={{ color: "var(--text-muted)" }}>
 
       <span>Upload</span>
       <span>Analysis</span>
@@ -1457,7 +1485,7 @@ max-w-[320px]
 
     <div className="mt-5 flex justify-between items-center">
 
-  <p className="font-medium">
+  <p className="font-medium" style={{ color: "var(--text)" }}>
     {project.current_task}
   </p>
 
@@ -1476,11 +1504,11 @@ max-w-[320px]
 
   {/* Uploaded Files */}
 
-  <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
+  <div className="rounded-2xl p-6 border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
 
     <div className="flex items-center justify-between mb-4">
 
-  <h3 className="text-xl font-semibold">
+  <h3 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
     Uploaded Files
   </h3>
 
@@ -1491,10 +1519,10 @@ max-w-[320px]
   className="
     flex items-center gap-2
     text-sm
-    text-zinc-400
     hover:opacity-80
     transition
   "
+  style={{ color: "var(--text-muted)" }}
 >
   <Plus size={16} />
 
@@ -1522,9 +1550,10 @@ max-w-[320px]
       {files.map((file) => (
         <div
           key={file.id}
-          className="flex items-center justify-between border border-[#1F2937] rounded-lg px-3 py-3"
+          className="flex items-center justify-between rounded-lg px-3 py-3 border"
+          style={{ borderColor: "var(--border)" }}
         >
-          <p className="text-sm truncate">
+          <p className="text-sm truncate" style={{ color: "var(--text)" }}>
             {file.file_name}
           </p>
 
@@ -1556,11 +1585,11 @@ style={{
       deleteFile(file.id)
     }
     className="
-      text-zinc-400
       hover:opacity-80
       cursor-pointer
       transition
     "
+    style={{ color: "var(--text-muted)" }}
   />
 
 </div>
@@ -1580,11 +1609,11 @@ style={{
 
 {uploadedPreviewUrl && (
 
-  <div className="mt-5 pt-5 border-t border-[#1F2937]">
+  <div className="mt-5 pt-5 border-t" style={{ borderColor: "var(--border)" }}>
 
     <div className="flex items-center gap-2 mb-3">
 
-    <span className="text-xs text-zinc-500">
+    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
       Now Playing
     </span>
 
@@ -1637,6 +1666,7 @@ style={{
     uploadedAudioRef.current.pause();
   }
 }}
+    style={{ color: "var(--text)" }}
   >
     {uploadedPlaying
   ? "❚❚"
@@ -1644,7 +1674,8 @@ style={{
   </button>
 
   <div
-  className="flex-1 h-[4px] bg-[#1F2937] rounded-full relative cursor-pointer"
+  className="flex-1 h-[4px] rounded-full relative cursor-pointer"
+  style={{ backgroundColor: "var(--border)" }}
   onClick={(e) => {
     if (!uploadedAudioRef.current) return;
 
@@ -1696,17 +1727,17 @@ style={{
 <div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-6 mb-6">
 
   {/* Frequency Spectrum Analysis */}
-  <div className="bg-[#111827] border border-[#1F2937] rounded-2xl overflow-hidden">
+  <div className="rounded-2xl overflow-hidden border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
     <div className="flex items-center justify-between mb-4 px-6 pt-6">
-      <h3 className="text-xl font-semibold">Frequency Spectrum</h3>
+      <h3 className="text-xl font-semibold" style={{ color: "var(--text)" }}>Frequency Spectrum</h3>
       <div className="flex items-center gap-4 pr-6">
             <div className="flex items-center gap-2">
               <div className="w-6 h-0.5 rounded-full" style={{ backgroundColor: accentColor }} />
-              <span className="text-[10px] text-zinc-500">Original Mix</span>
+              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>Original Mix</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-6 h-0.5 rounded-full" style={{ backgroundColor: "#F0A500" }} />
-              <span className="text-[10px] text-zinc-500">AI Master</span>
+              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>AI Master</span>
             </div>
           </div>
     </div>
@@ -1795,7 +1826,7 @@ style={{
         <svg
           viewBox={`0 0 ${W} ${H}`}
           className="w-full"
-          style={{ background: "#0A0A0A", borderRadius: "12px" }}
+          style={{ background: "var(--background)", borderRadius: "12px" }}
         >
           {/* dB grid lines */}
           {dbSteps.map(db => (
@@ -1803,11 +1834,11 @@ style={{
               <line
                 x1={PAD.left} y1={yPos(db)}
                 x2={PAD.left + innerW} y2={yPos(db)}
-                stroke="#1F2937" strokeWidth="0.5"
+                stroke="var(--border)" strokeWidth="0.5"
               />
               <text
                 x={PAD.left - 4} y={yPos(db) + 3}
-                textAnchor="end" fontSize="9" fill="#4B5563"
+                textAnchor="end" fontSize="9" fill="var(--text-muted)"
               >
                 {db}
               </text>
@@ -1819,7 +1850,7 @@ style={{
             <text
               key={b.label}
               x={xPos(i)} y={H - 6}
-              textAnchor="middle" fontSize="9" fill="#4B5563"
+              textAnchor="middle" fontSize="9" fill="var(--text-muted)"
             >
               {b.freq}
             </text>
@@ -1831,7 +1862,7 @@ style={{
               key={i}
               x1={xPos(i)} y1={PAD.top}
               x2={xPos(i)} y2={PAD.top + innerH}
-              stroke="#1F2937" strokeWidth="0.5"
+              stroke="var(--border)" strokeWidth="0.5"
             />
           ))}
 
@@ -1897,7 +1928,7 @@ style={{
           {!hasData && (
             <text
               x={W / 2} y={H / 2}
-              textAnchor="middle" fontSize="12" fill="#4B5563"
+              textAnchor="middle" fontSize="12" fill="var(--text-muted)"
             >
               Analysing...
             </text>
@@ -1909,20 +1940,20 @@ style={{
 
   {/* Stereo Analysis — square card with Lissajous */}
   <div
-    className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6"
-    style={{ aspectRatio: "1 / 1" }}
+    className="rounded-2xl p-6 border"
+    style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", aspectRatio: "1 / 1" }}
   >
     <div className="flex items-center justify-between mb-4">
-      <h3 className="text-xl font-semibold">Stereo</h3>
+      <h3 className="text-xl font-semibold" style={{ color: "var(--text)" }}>Stereo</h3>
       <div className="flex items-center gap-3">
         <div className="text-right">
-          <p className="text-[10px] text-zinc-500 uppercase">Mix Width</p>
+          <p className="text-[10px] uppercase" style={{ color: "var(--text-muted)" }}>Mix Width</p>
           <p className="text-sm font-semibold" style={{ color: accentColor }}>
             {project.stereo_width != null ? `${project.stereo_width.toFixed(1)}%` : "--"}
           </p>
         </div>
         <div className="text-right">
-          <p className="text-[10px] text-zinc-500 uppercase">Master Width</p>
+          <p className="text-[10px] uppercase" style={{ color: "var(--text-muted)" }}>Master Width</p>
           <p className="text-sm font-semibold" style={{ color: "#F0A500" }}>
             {project.master_stereo_width != null ? `${project.master_stereo_width.toFixed(1)}%` : "--"}
           </p>
@@ -1938,20 +1969,20 @@ style={{
         style={{ maxHeight: "200px" }}
       >
         {/* Background grid */}
-        <circle cx="0" cy="0" r="1" fill="none" stroke="#1F2937" strokeWidth="0.02" />
-        <circle cx="0" cy="0" r="0.5" fill="none" stroke="#1F2937" strokeWidth="0.01" strokeDasharray="0.05 0.05" />
+        <circle cx="0" cy="0" r="1" fill="none" stroke="var(--border)" strokeWidth="0.02" />
+        <circle cx="0" cy="0" r="0.5" fill="none" stroke="var(--border)" strokeWidth="0.01" strokeDasharray="0.05 0.05" />
         {/* Axis lines */}
-        <line x1="-1" y1="0" x2="1" y2="0" stroke="#1F2937" strokeWidth="0.02" />
-        <line x1="0" y1="-1" x2="0" y2="1" stroke="#1F2937" strokeWidth="0.02" />
+        <line x1="-1" y1="0" x2="1" y2="0" stroke="var(--border)" strokeWidth="0.02" />
+        <line x1="0" y1="-1" x2="0" y2="1" stroke="var(--border)" strokeWidth="0.02" />
         {/* Diagonal guides */}
-        <line x1="-0.7" y1="-0.7" x2="0.7" y2="0.7" stroke="#1F2937" strokeWidth="0.01" strokeDasharray="0.04 0.04" />
-        <line x1="-0.7" y1="0.7" x2="0.7" y2="-0.7" stroke="#1F2937" strokeWidth="0.01" strokeDasharray="0.04 0.04" />
+        <line x1="-0.7" y1="-0.7" x2="0.7" y2="0.7" stroke="var(--border)" strokeWidth="0.01" strokeDasharray="0.04 0.04" />
+        <line x1="-0.7" y1="0.7" x2="0.7" y2="-0.7" stroke="var(--border)" strokeWidth="0.01" strokeDasharray="0.04 0.04" />
 
         {/* Labels */}
-        <text x="0" y="-1.05" textAnchor="middle" fontSize="0.12" fill="#4B5563">L+R</text>
-        <text x="0" y="1.18" textAnchor="middle" fontSize="0.12" fill="#4B5563">L+R</text>
-        <text x="-1.1" y="0.04" textAnchor="middle" fontSize="0.12" fill="#4B5563">L</text>
-        <text x="1.1" y="0.04" textAnchor="middle" fontSize="0.12" fill="#4B5563">R</text>
+        <text x="0" y="-1.05" textAnchor="middle" fontSize="0.12" fill="var(--text-muted)">L+R</text>
+        <text x="0" y="1.18" textAnchor="middle" fontSize="0.12" fill="var(--text-muted)">L+R</text>
+        <text x="-1.1" y="0.04" textAnchor="middle" fontSize="0.12" fill="var(--text-muted)">L</text>
+        <text x="1.1" y="0.04" textAnchor="middle" fontSize="0.12" fill="var(--text-muted)">R</text>
 
         {/* Correlation indicator — drawn as a dynamic ellipse */}
         {project.stereo_correlation != null && (() => {
@@ -2012,7 +2043,7 @@ style={{
 
         {/* No data state */}
         {project.stereo_correlation == null && (
-          <text x="0" y="0.05" textAnchor="middle" fontSize="0.15" fill="#4B5563">
+          <text x="0" y="0.05" textAnchor="middle" fontSize="0.15" fill="var(--text-muted)">
             No Data
           </text>
         )}
@@ -2020,19 +2051,19 @@ style={{
 
       {/* Correlation meter below goniometer */}
       <div className="w-full mt-3">
-        <div className="flex justify-between text-[9px] text-zinc-600 mb-1">
+        <div className="flex justify-between text-[9px] mb-1" style={{ color: "var(--text-muted)" }}>
           <span>-1 Phase</span>
           <span>Correlation</span>
           <span>+1 Mono</span>
         </div>
-        <div className="relative h-2 bg-[#0A0A0A] rounded-full overflow-hidden">
+        <div className="relative h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--background)" }}>
           <div
             className="absolute h-full rounded-full"
             style={{
               width: "50%",
               left: "50%",
               transform: "translateX(-50%)",
-              backgroundColor: "#1F2937",
+              backgroundColor: "var(--border)",
             }}
           />
           {project.stereo_correlation != null && (() => {
@@ -2065,13 +2096,13 @@ style={{
           return (
             <div className="flex justify-between mt-2">
               <div>
-                <p className="text-[9px] text-zinc-500">Correlation ({label})</p>
+                <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>Correlation ({label})</p>
                 <p className="text-xs font-semibold" style={{ color: corrColor }}>
                   {corrVal != null ? corrVal.toFixed(2) : "--"}
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-[9px] text-zinc-500">Phase</p>
+                <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>Phase</p>
                 <p className="text-xs font-semibold" style={{ color: corrColor }}>
                   {corrVal != null
                     ? corrVal > 0.3 ? "Healthy"
@@ -2089,9 +2120,9 @@ style={{
 
 </div>
 
-<div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 mb-6">
+<div className="rounded-2xl p-6 mb-6 border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
 
-  <h3 className="text-xl font-semibold mb-6">
+  <h3 className="text-xl font-semibold mb-6" style={{ color: "var(--text)" }}>
     Audio Preview
   </h3>
 
@@ -2101,11 +2132,11 @@ style={{
 
       {/* Header row with metrics */}
       <div className="flex items-center justify-between mb-3">
-        <h4 className="font-medium">Original Mix</h4>
+        <h4 className="font-medium" style={{ color: "var(--text)" }}>Original Mix</h4>
 
         <div className="flex items-center gap-4">
           <div className="text-center">
-            <p className="text-[9px] text-zinc-500 uppercase mb-0.5">LUFS</p>
+            <p className="text-[9px] uppercase mb-0.5" style={{ color: "var(--text-muted)" }}>LUFS</p>
             <p className="text-sm font-semibold" style={{ color: accentColor }}>
               {project.integrated_lufs != null
                 ? `${project.integrated_lufs.toFixed(1)}`
@@ -2113,7 +2144,7 @@ style={{
             </p>
           </div>
           <div className="text-center">
-            <p className="text-[9px] text-zinc-500 uppercase mb-0.5">True Peak</p>
+            <p className="text-[9px] uppercase mb-0.5" style={{ color: "var(--text-muted)" }}>True Peak</p>
             <p className="text-sm font-semibold" style={{ color: accentColor }}>
               {project.true_peak != null
                 ? `${project.true_peak.toFixed(1)} dB`
@@ -2121,7 +2152,7 @@ style={{
             </p>
           </div>
           <div className="text-center">
-            <p className="text-[9px] text-zinc-500 uppercase mb-0.5">DR</p>
+            <p className="text-[9px] uppercase mb-0.5" style={{ color: "var(--text-muted)" }}>DR</p>
             <p className="text-sm font-semibold" style={{ color: accentColor }}>
               {project.dynamic_range != null
                 ? `${project.dynamic_range.toFixed(1)}`
@@ -2129,7 +2160,7 @@ style={{
             </p>
           </div>
           <div className="text-center">
-            <p className="text-[9px] text-zinc-500 uppercase mb-0.5">RMS</p>
+            <p className="text-[9px] uppercase mb-0.5" style={{ color: "var(--text-muted)" }}>RMS</p>
             <p className="text-sm font-semibold" style={{ color: accentColor }}>
               {project.rms != null
                 ? `${project.rms.toFixed(1)}`
@@ -2139,7 +2170,7 @@ style={{
         </div>
       </div>
 
-      <div className="border border-[#1F2937] rounded-xl p-6">
+      <div className="rounded-xl p-6 border" style={{ borderColor: "var(--border)" }}>
         <audio
           ref={mixAudioRef}
           src={mixAudioUrl || undefined}
@@ -2175,7 +2206,8 @@ style={{
           </button>
 
           <div
-            className="flex-1 h-[4px] bg-[#1F2937] rounded-full relative cursor-pointer"
+            className="flex-1 h-[4px] rounded-full relative cursor-pointer"
+            style={{ backgroundColor: "var(--border)" }}
             onClick={(e) => {
               if (!mixAudioRef.current) return;
               const rect = e.currentTarget.getBoundingClientRect();
@@ -2197,7 +2229,7 @@ style={{
             />
           </div>
 
-          <span className="text-sm text-zinc-400 flex-shrink-0">
+          <span className="text-sm flex-shrink-0" style={{ color: "var(--text-muted)" }}>
             {mixAudioTime || "0:00"} / {mixAudioDuration || "0:00"}
           </span>
         </div>
@@ -2208,11 +2240,11 @@ style={{
   {/* AI Assisted Master */}
   <div>
     <div className="flex items-center justify-between mb-3">
-      <h4 className="font-medium">AI Assisted Master</h4>
+      <h4 className="font-medium" style={{ color: "var(--text)" }}>AI Assisted Master</h4>
 
       <div className="flex items-center gap-4">
         <div className="text-center">
-          <p className="text-[9px] text-zinc-500 uppercase mb-0.5">LUFS</p>
+          <p className="text-[9px] uppercase mb-0.5" style={{ color: "var(--text-muted)" }}>LUFS</p>
           <p className="text-sm font-semibold" style={{ color: "#F0A500" }}>
             {project.master_lufs != null
               ? `${project.master_lufs.toFixed(1)}`
@@ -2220,7 +2252,7 @@ style={{
           </p>
         </div>
         <div className="text-center">
-          <p className="text-[9px] text-zinc-500 uppercase mb-0.5">True Peak</p>
+          <p className="text-[9px] uppercase mb-0.5" style={{ color: "var(--text-muted)" }}>True Peak</p>
           <p className="text-sm font-semibold" style={{ color: "#F0A500" }}>
             {project.master_true_peak != null
               ? `${project.master_true_peak.toFixed(1)} dB`
@@ -2228,7 +2260,7 @@ style={{
           </p>
         </div>
         <div className="text-center">
-          <p className="text-[9px] text-zinc-500 uppercase mb-0.5">DR</p>
+          <p className="text-[9px] uppercase mb-0.5" style={{ color: "var(--text-muted)" }}>DR</p>
           <p className="text-sm font-semibold" style={{ color: "#F0A500" }}>
             {project.master_dynamic_range != null
               ? `${project.master_dynamic_range.toFixed(1)}`
@@ -2236,7 +2268,7 @@ style={{
           </p>
         </div>
         <div className="text-center">
-          <p className="text-[9px] text-zinc-500 uppercase mb-0.5">RMS</p>
+          <p className="text-[9px] uppercase mb-0.5" style={{ color: "var(--text-muted)" }}>RMS</p>
           <p className="text-sm font-semibold" style={{ color: "#F0A500" }}>
             {project.master_rms != null
               ? `${project.master_rms.toFixed(1)}`
@@ -2247,7 +2279,7 @@ style={{
     </div>
 
     {project.master_file_path ? (
-      <div className="border border-[#1F2937] rounded-xl p-6">
+      <div className="rounded-xl p-6 border" style={{ borderColor: "var(--border)" }}>
         <audio
           ref={masterAudioRef}
           src={masterAudioUrl || undefined}
@@ -2283,7 +2315,8 @@ style={{
           </button>
 
           <div
-            className="flex-1 h-[4px] bg-[#1F2937] rounded-full relative cursor-pointer"
+            className="flex-1 h-[4px] rounded-full relative cursor-pointer"
+            style={{ backgroundColor: "var(--border)" }}
             onClick={(e) => {
               if (!masterAudioRef.current) return;
               const rect = e.currentTarget.getBoundingClientRect();
@@ -2305,13 +2338,13 @@ style={{
             />
           </div>
 
-          <span className="text-sm text-zinc-400 flex-shrink-0">
+          <span className="text-sm flex-shrink-0" style={{ color: "var(--text-muted)" }}>
             {masterAudioTime || "0:00"} / {masterAudioDuration || "0:00"}
           </span>
         </div>
       </div>
     ) : (
-      <div className="h-24 rounded-xl border border-[#1F2937] flex items-center justify-center text-zinc-500">
+      <div className="h-24 rounded-xl border flex items-center justify-center" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
         Processing Not Complete
       </div>
     )}
@@ -2328,11 +2361,11 @@ style={{
 
         {/* Generated Output */}
 
-<div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6">
+<div className="rounded-2xl p-6 border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
 
   <div className="flex items-center justify-between mb-4">
 
-    <h3 className="text-xl font-semibold">
+    <h3 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
       Generated Output
     </h3>
 
@@ -2345,7 +2378,7 @@ style={{
 
   </div>
 
-  <p className="text-zinc-400 mb-6">
+  <p className="mb-6" style={{ color: "var(--text-muted)" }}>
     {project.master_file_path
       ? "Your AI mastered files are ready to download."
       : "AI-generated files will appear here when processing is complete."}
@@ -2354,10 +2387,10 @@ style={{
   <div className="space-y-3">
 
     {/* Master WAV */}
-    <div className={`border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between ${!project.master_file_path ? "opacity-50" : ""}`}>
+    <div className={`rounded-xl px-4 py-3 flex items-center justify-between border ${!project.master_file_path ? "opacity-50" : ""}`} style={{ borderColor: "var(--border)" }}>
       <div>
-        <p className="font-medium">Master WAV</p>
-        <p className="text-xs text-zinc-500">High Quality Export</p>
+        <p className="font-medium" style={{ color: "var(--text)" }}>Master WAV</p>
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>High Quality Export</p>
       </div>
 
       <button
@@ -2365,21 +2398,29 @@ style={{
         onClick={async () => {
           if (!project.master_file_path) return;
 
-          const budgetCheck = await checkEgressBudget();
-          if (!budgetCheck.allowed) {
-            setEgressBlocked(true);
-            notifyEgressBlocked();
-            return;
+          // Check browser cache first — zero egress if hit
+          // (shares cache key with the Master preview player above)
+          let blob = await getCachedAudio(project.master_file_path);
+
+          if (!blob) {
+            const budgetCheck = await checkEgressBudget();
+            if (!budgetCheck.allowed) {
+              setEgressBlocked(true);
+              notifyEgressBlocked();
+              return;
+            }
+
+            const { data, error } = await supabase.storage
+              .from("project-files")
+              .createSignedUrl(project.master_file_path, 60);
+            if (error || !data) return;
+
+            // Fetch as blob to force download instead of browser open
+            blob = await fetchAndLogAudio(data.signedUrl, "download", project.id);
+            checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
+            setCachedAudio(project.master_file_path, blob);
           }
 
-          const { data, error } = await supabase.storage
-            .from("project-files")
-            .createSignedUrl(project.master_file_path, 60);
-          if (error || !data) return;
-
-          // Fetch as blob to force download instead of browser open
-          const blob = await fetchAndLogAudio(data.signedUrl, "download", project.id);
-          checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url;
@@ -2394,8 +2435,8 @@ style={{
           backgroundColor: accentColor,
           color: "#000",
         } : {
-          backgroundColor: "#1F2937",
-          color: "#6b7280",
+          backgroundColor: "var(--border)",
+          color: "var(--text-muted)",
         }}
       >
         Download
@@ -2403,31 +2444,39 @@ style={{
     </div>
 
     {/* Master MP3 — coming soon */}
-    <div className={`border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between ${!project.master_file_path ? "opacity-50" : ""}`}>
+    <div className={`rounded-xl px-4 py-3 flex items-center justify-between border ${!project.master_file_path ? "opacity-50" : ""}`} style={{ borderColor: "var(--border)" }}>
       <div>
-        <p className="font-medium">Master MP3</p>
-        <p className="text-xs text-zinc-500">Streaming Ready — 320kbps</p>
+        <p className="font-medium" style={{ color: "var(--text)" }}>Master MP3</p>
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>Streaming Ready — 320kbps</p>
       </div>
       <button
         disabled={!project.master_file_path}
         onClick={async () => {
           if (!project.master_file_path) return;
 
-          const budgetCheck = await checkEgressBudget();
-          if (!budgetCheck.allowed) {
-            setEgressBlocked(true);
-            notifyEgressBlocked();
-            return;
+          // Check browser cache first — zero egress if hit
+          // (shares cache key with the Master preview player + WAV download)
+          let blob = await getCachedAudio(project.master_file_path);
+
+          if (!blob) {
+            const budgetCheck = await checkEgressBudget();
+            if (!budgetCheck.allowed) {
+              setEgressBlocked(true);
+              notifyEgressBlocked();
+              return;
+            }
+
+            const { data, error } = await supabase.storage
+              .from("project-files")
+              .createSignedUrl(project.master_file_path, 60);
+            if (error || !data) return;
+
+            // Fetch the master WAV and re-encode as MP3
+            blob = await fetchAndLogAudio(data.signedUrl, "download", project.id);
+            checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
+            setCachedAudio(project.master_file_path, blob);
           }
 
-          const { data, error } = await supabase.storage
-            .from("project-files")
-            .createSignedUrl(project.master_file_path, 60);
-          if (error || !data) return;
-
-          // Fetch the master WAV and re-encode as MP3
-          const blob = await fetchAndLogAudio(data.signedUrl, "download", project.id);
-          checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
           const arrayBuffer = await blob.arrayBuffer();
           const audioContext = new AudioContext();
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -2447,8 +2496,8 @@ style={{
           backgroundColor: accentColor,
           color: "#000",
         } : {
-          backgroundColor: "#1F2937",
-          color: "#6b7280",
+          backgroundColor: "var(--border)",
+          color: "var(--text-muted)",
         }}
       >
         Download
@@ -2456,12 +2505,12 @@ style={{
     </div>
 
     {/* Instrumental WAV — coming soon */}
-    <div className="border border-[#1F2937] rounded-xl px-4 py-3 flex items-center justify-between opacity-50">
+    <div className="rounded-xl px-4 py-3 flex items-center justify-between opacity-50 border" style={{ borderColor: "var(--border)" }}>
       <div>
-        <p className="font-medium">Instrumental WAV</p>
-        <p className="text-xs text-zinc-500">Optional Export — Coming Soon</p>
+        <p className="font-medium" style={{ color: "var(--text)" }}>Instrumental WAV</p>
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>Optional Export — Coming Soon</p>
       </div>
-      <button disabled className="px-3 py-1 rounded-lg bg-[#1F2937] text-zinc-500 text-sm">
+      <button disabled className="px-3 py-1 rounded-lg text-sm" style={{ backgroundColor: "var(--border)", color: "var(--text-muted)" }}>
         Download
       </button>
     </div>
