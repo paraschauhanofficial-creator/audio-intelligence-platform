@@ -146,6 +146,7 @@ async function maybeNotify(userId: string, type: string, title: string, message:
     type,
     title,
     message,
+    read: false, // explicit — don't rely on the DB column default
   });
   if (error) console.error("notifications insert failed:", error);
 }

@@ -25,23 +25,38 @@ function formatBytes(bytes: number) {
 export default function AdminPage() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState<boolean | null>(null);
-  const [users, setUsers] = useState<Profile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [users, setUsers]           = useState<Profile[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [search, setSearch]         = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [toast, setToast] = useState("");
-  const [usageById, setUsageById] = useState<Record<string, {
+  const [toast, setToast]           = useState("");
+  const [usageById, setUsageById]   = useState<Record<string, {
     storageUsedBytes: number; storageBudgetBytes: number;
     egressUsedBytes: number; egressBudgetBytes: number;
   }>>({});
 
   // Add user form state
-  const [newEmail, setNewEmail] = useState("");
+  const [newEmail, setNewEmail]       = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState<"user" | "super_user" | "admin">("user");
-  const [newPlan, setNewPlan] = useState<"free" | "pro" | "studio">("free");
-  const [creating, setCreating] = useState(false);
+  const [newName, setNewName]         = useState("");
+  const [newRole, setNewRole]         = useState<"user" | "super_user" | "admin">("user");
+  const [newPlan, setNewPlan]         = useState<"free" | "pro" | "studio">("free");
+  const [creating, setCreating]       = useState(false);
+
+  // Theme — identical pattern to every other migrated page (see projects/page.tsx)
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("nokashi-theme");
+    setIsDarkMode(saved !== "light");
+    const observer = new MutationObserver(() => {
+      setIsDarkMode(!document.documentElement.classList.contains("theme-light"));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  const inputBg = isDarkMode ? "#0A0A0A" : "rgba(255,255,255,0.6)";
 
   useEffect(() => { checkAdminAndLoad(); }, []);
 
@@ -82,9 +97,9 @@ export default function AdminPage() {
       const map: typeof usageById = {};
       for (const u of data.users) {
         map[u.id] = {
-          storageUsedBytes: u.storageUsedBytes,
+          storageUsedBytes:  u.storageUsedBytes,
           storageBudgetBytes: u.storageBudgetBytes,
-          egressUsedBytes: u.egressUsedBytes,
+          egressUsedBytes:   u.egressUsedBytes,
           egressBudgetBytes: u.egressBudgetBytes,
         };
       }
@@ -108,9 +123,7 @@ export default function AdminPage() {
     });
     const data = await res.json();
     setCreating(false);
-
     if (data.error) { showToast(data.error); return; }
-
     showToast("User created ✓");
     setShowAddModal(false);
     setNewEmail(""); setNewPassword(""); setNewName(""); setNewRole("user"); setNewPlan("free");
@@ -156,6 +169,7 @@ export default function AdminPage() {
     (u.full_name ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
+  // Semantic colors — encode role/plan identity, not theme
   const roleColor = (role: string) =>
     role === "admin" ? "#FF6B4A" : role === "super_user" ? "#F0A500" : "#6B7280";
 
@@ -164,11 +178,11 @@ export default function AdminPage() {
 
   if (authorized === false) {
     return (
-      <div className="min-h-screen bg-[#0A0A0A] text-white">
+      <div className="min-h-screen" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
         <Navbar accentColor="#00B7FF" />
         <div className="flex flex-col items-center justify-center h-[60vh] gap-3">
-          <Shield size={40} className="text-zinc-700" />
-          <p className="text-zinc-500">You don't have access to this page.</p>
+          <Shield size={40} style={{ color: "var(--text-muted)" }} />
+          <p style={{ color: "var(--text-muted)" }}>You don't have access to this page.</p>
           <button onClick={() => router.push("/projects")} className="text-sm text-[#00B7FF] hover:underline">Go back home</button>
         </div>
       </div>
@@ -176,18 +190,18 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white">
+    <div className="min-h-screen" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
       <Navbar accentColor="#00B7FF" />
 
       <div className="max-w-6xl mx-auto px-8 py-12">
 
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-3xl font-bold flex items-center gap-3">
+            <h2 className="text-3xl font-bold flex items-center gap-3" style={{ color: "var(--text)" }}>
               <Shield size={28} style={{ color: "#FF6B4A" }} />
               Admin Panel
             </h2>
-            <p className="text-zinc-500 mt-1">Manage users, roles, and plans.</p>
+            <p className="mt-1" style={{ color: "var(--text-muted)" }}>Manage users, roles, and plans.</p>
           </div>
           <button onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm"
@@ -200,16 +214,19 @@ export default function AdminPage() {
         <input
           type="text" placeholder="Search by name or email..."
           value={search} onChange={e => setSearch(e.target.value)}
-          className="w-full bg-[#111827] border border-[#1F2937] rounded-xl px-4 py-3 mb-6 focus:outline-none focus:border-[#00B7FF] transition"
+          className="w-full rounded-xl px-4 py-3 mb-6 focus:outline-none transition border"
+          style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", color: "var(--text)" }}
+          onFocus={e => (e.currentTarget.style.borderColor = "#00B7FF")}
+          onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}
         />
 
         {loading ? (
-          <p className="text-zinc-500 text-center py-12">Loading users...</p>
+          <p className="text-center py-12" style={{ color: "var(--text-muted)" }}>Loading users...</p>
         ) : (
-          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl overflow-hidden">
+          <div className="rounded-2xl overflow-hidden border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[#1F2937] text-left text-zinc-500 text-xs uppercase">
+                <tr className="text-left text-xs uppercase" style={{ borderBottom: "1px solid var(--border)", color: "var(--text-muted)" }}>
                   <th className="px-5 py-3 font-medium">User</th>
                   <th className="px-5 py-3 font-medium">Role</th>
                   <th className="px-5 py-3 font-medium">Plan</th>
@@ -221,17 +238,20 @@ export default function AdminPage() {
               </thead>
               <tbody>
                 {filteredUsers.map(u => (
-                  <tr key={u.id} className="border-b border-[#1F2937] last:border-0 hover:bg-[#1F293720] transition">
+                  <tr key={u.id} className="transition last:border-0"
+                    style={{ borderBottom: "1px solid var(--border)" }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = isDarkMode ? "rgba(31,41,55,0.3)" : "rgba(0,0,0,0.03)")}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
                     <td className="px-5 py-4">
-                      <p className="font-medium text-zinc-200">{u.full_name || "—"}</p>
-                      <p className="text-xs text-zinc-500">{u.email}</p>
+                      <p className="font-medium" style={{ color: "var(--text)" }}>{u.full_name || "—"}</p>
+                      <p className="text-xs" style={{ color: "var(--text-muted)" }}>{u.email}</p>
                     </td>
                     <td className="px-5 py-4">
                       <select
                         value={u.role}
                         onChange={e => updateUserRole(u.id, e.target.value)}
-                        className="bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none"
-                        style={{ color: roleColor(u.role) }}
+                        className="rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none border"
+                        style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: roleColor(u.role) }}
                       >
                         <option value="user">User</option>
                         <option value="super_user">Super User</option>
@@ -242,8 +262,8 @@ export default function AdminPage() {
                       <select
                         value={u.plan}
                         onChange={e => updateUserPlan(u.id, e.target.value)}
-                        className="bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none capitalize"
-                        style={{ color: planColor(u.plan) }}
+                        className="rounded-lg px-2 py-1.5 text-xs font-semibold focus:outline-none capitalize border"
+                        style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: planColor(u.plan) }}
                       >
                         <option value="free">Free</option>
                         <option value="pro">Pro</option>
@@ -257,13 +277,13 @@ export default function AdminPage() {
                         const color = pct >= 90 ? "#FF6B4A" : pct >= 70 ? "#F0A500" : "#6B7280";
                         return (
                           <div>
-                            <p className="text-xs text-zinc-400 mb-1">{formatBytes(s.storageUsedBytes)} / {formatBytes(s.storageBudgetBytes)}</p>
-                            <div className="w-full h-1 bg-[#0A0A0A] rounded-full overflow-hidden">
+                            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>{formatBytes(s.storageUsedBytes)} / {formatBytes(s.storageBudgetBytes)}</p>
+                            <div className="w-full h-1 rounded-full overflow-hidden" style={{ backgroundColor: "var(--background)" }}>
                               <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
                             </div>
                           </div>
                         );
-                      })() : <span className="text-xs text-zinc-600">—</span>}
+                      })() : <span className="text-xs" style={{ color: "var(--text-muted)" }}>—</span>}
                     </td>
                     <td className="px-5 py-4 min-w-[120px]">
                       {usageById[u.id] ? (() => {
@@ -272,20 +292,23 @@ export default function AdminPage() {
                         const color = pct >= 90 ? "#FF6B4A" : pct >= 70 ? "#F0A500" : "#6B7280";
                         return (
                           <div>
-                            <p className="text-xs text-zinc-400 mb-1">{formatBytes(s.egressUsedBytes)} / {formatBytes(s.egressBudgetBytes)}</p>
-                            <div className="w-full h-1 bg-[#0A0A0A] rounded-full overflow-hidden">
+                            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>{formatBytes(s.egressUsedBytes)} / {formatBytes(s.egressBudgetBytes)}</p>
+                            <div className="w-full h-1 rounded-full overflow-hidden" style={{ backgroundColor: "var(--background)" }}>
                               <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
                             </div>
                           </div>
                         );
-                      })() : <span className="text-xs text-zinc-600">—</span>}
+                      })() : <span className="text-xs" style={{ color: "var(--text-muted)" }}>—</span>}
                     </td>
-                    <td className="px-5 py-4 text-zinc-500 text-xs">
+                    <td className="px-5 py-4 text-xs" style={{ color: "var(--text-muted)" }}>
                       {new Date(u.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                     </td>
                     <td className="px-5 py-4 text-right">
                       <button onClick={() => sendPasswordReset(u.email)}
-                        className="flex items-center gap-1.5 ml-auto text-xs text-zinc-400 hover:text-[#00B7FF] transition px-3 py-1.5 rounded-lg border border-[#1F2937] hover:border-[#00B7FF40]">
+                        className="flex items-center gap-1.5 ml-auto text-xs px-3 py-1.5 rounded-lg border transition"
+                        style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                        onMouseEnter={e => { e.currentTarget.style.color = "#00B7FF"; e.currentTarget.style.borderColor = "#00B7FF40"; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
                         <Mail size={12} />
                         Reset Password
                       </button>
@@ -293,7 +316,7 @@ export default function AdminPage() {
                   </tr>
                 ))}
                 {filteredUsers.length === 0 && (
-                  <tr><td colSpan={7} className="text-center text-zinc-600 py-8">No users found.</td></tr>
+                  <tr><td colSpan={7} className="text-center py-8" style={{ color: "var(--text-muted)" }}>No users found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -303,46 +326,59 @@ export default function AdminPage() {
 
       {/* Add User Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl p-6 w-full max-w-md">
+        <div className="fixed inset-0 flex items-center justify-center z-50 px-4" style={{ backgroundColor: "rgba(0,0,0,0.7)" }}>
+          <div className="rounded-2xl p-6 w-full max-w-md border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold">Add User</h3>
-              <button onClick={() => setShowAddModal(false)} className="text-zinc-500 hover:text-zinc-300">
+              <h3 className="text-lg font-bold" style={{ color: "var(--text)" }}>Add User</h3>
+              <button onClick={() => setShowAddModal(false)} style={{ color: "var(--text-muted)" }}
+                onMouseEnter={e => (e.currentTarget.style.color = "var(--text)")}
+                onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}>
                 <X size={20} />
               </button>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs text-zinc-500 mb-1.5">Full Name (optional)</label>
+                <label className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>Full Name (optional)</label>
                 <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
-                  className="w-full bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#00B7FF]"/>
+                  className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none border transition"
+                  style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
+                  onFocus={e => (e.currentTarget.style.borderColor = "#00B7FF")}
+                  onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}/>
               </div>
               <div>
-                <label className="block text-xs text-zinc-500 mb-1.5">Email *</label>
+                <label className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>Email *</label>
                 <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
-                  className="w-full bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#00B7FF]"/>
+                  className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none border transition"
+                  style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
+                  onFocus={e => (e.currentTarget.style.borderColor = "#00B7FF")}
+                  onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}/>
               </div>
               <div>
-                <label className="block text-xs text-zinc-500 mb-1.5">Password *</label>
+                <label className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>Password *</label>
                 <input type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)}
                   placeholder="Min 6 characters"
-                  className="w-full bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#00B7FF]"/>
+                  className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none border transition"
+                  style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
+                  onFocus={e => (e.currentTarget.style.borderColor = "#00B7FF")}
+                  onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}/>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-zinc-500 mb-1.5">Role</label>
+                  <label className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>Role</label>
                   <select value={newRole} onChange={e => setNewRole(e.target.value as any)}
-                    className="w-full bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-3 py-2.5 text-sm focus:outline-none">
+                    className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none border"
+                    style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}>
                     <option value="user">User</option>
                     <option value="super_user">Super User</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-zinc-500 mb-1.5">Plan</label>
+                  <label className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>Plan</label>
                   <select value={newPlan} onChange={e => setNewPlan(e.target.value as any)}
-                    className="w-full bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-3 py-2.5 text-sm focus:outline-none">
+                    className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none border"
+                    style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}>
                     <option value="free">Free</option>
                     <option value="pro">Pro</option>
                     <option value="studio">Studio</option>
@@ -353,7 +389,8 @@ export default function AdminPage() {
 
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowAddModal(false)}
-                className="flex-1 py-2.5 rounded-lg border border-[#1F2937] text-sm">Cancel</button>
+                className="flex-1 py-2.5 rounded-lg border text-sm transition"
+                style={{ borderColor: "var(--border)", color: "var(--text)" }}>Cancel</button>
               <button onClick={handleCreateUser} disabled={creating}
                 className="flex-1 py-2.5 rounded-lg font-semibold text-sm disabled:opacity-50"
                 style={{ backgroundColor: "#00B7FF", color: "#000" }}>
@@ -366,9 +403,10 @@ export default function AdminPage() {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-[#111827] border border-[#1F2937] rounded-xl px-5 py-3 flex items-center gap-2 shadow-lg z-50">
+        <div className="fixed bottom-6 right-6 rounded-xl px-5 py-3 flex items-center gap-2 shadow-lg z-50 border"
+          style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
           <Check size={16} className="text-[#14D8C4]" />
-          <span className="text-sm">{toast}</span>
+          <span className="text-sm" style={{ color: "var(--text)" }}>{toast}</span>
         </div>
       )}
     </div>

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { User, Sparkles, LogOut, ChevronDown, Shield, Bell, Settings, Sun, Moon, Menu, X } from "lucide-react";
+import { User, Sparkles, LogOut, ChevronDown, Shield, Bell, Settings, Sun, Moon, Menu, X, Trash2 } from "lucide-react";
 import { notifyLoginSummary } from "@/lib/usageTracking";
 
 interface NotificationRow {
@@ -32,6 +32,7 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
   const unreadCount = notifications.filter(n => !n.read).length;
+  const [clearingAll, setClearingAll] = useState(false);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -51,7 +52,10 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
       }
     });
     loadNotifications();
-    notifyLoginSummary();
+    if (!sessionStorage.getItem("nokashi-login-notified")) {
+      notifyLoginSummary();
+      sessionStorage.setItem("nokashi-login-notified", "true");
+    }
 
     const saved = localStorage.getItem("nokashi-theme");
     if (saved === "light") {
@@ -82,6 +86,35 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
     if (unreadIds.length === 0) return;
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     await supabase.from("notifications").update({ read: true }).in("id", unreadIds);
+  };
+
+  // Real delete — removes the row from the database, not just a local dismiss.
+  const deleteNotification = async (id: string) => {
+    const prev = notifications;
+    setNotifications(current => current.filter(n => n.id !== id)); // optimistic
+
+    const { error } = await supabase.from("notifications").delete().eq("id", id);
+    if (error) {
+      console.error("notification delete failed:", error);
+      setNotifications(prev); // roll back on failure
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    if (notifications.length === 0) return;
+    setClearingAll(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setClearingAll(false); return; }
+
+    const prev = notifications;
+    setNotifications([]); // optimistic
+
+    const { error } = await supabase.from("notifications").delete().eq("user_id", user.id);
+    if (error) {
+      console.error("clear all notifications failed:", error);
+      setNotifications(prev); // roll back on failure
+    }
+    setClearingAll(false);
   };
 
   const toggleTheme = () => {
@@ -170,12 +203,20 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
                 <div className="px-4 py-3 flex items-center justify-between"
                   style={{ borderBottom: "1px solid var(--border)" }}>
                   <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>Notifications</p>
-                  {unreadCount > 0 && (
-                    <button onClick={markAllAsRead} className="text-xs transition"
-                      style={{ color: "var(--text-muted)" }}>
-                      Mark all read
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {unreadCount > 0 && (
+                      <button onClick={markAllAsRead} className="text-xs transition"
+                        style={{ color: "var(--text-muted)" }}>
+                        Mark all read
+                      </button>
+                    )}
+                    {notifications.length > 0 && (
+                      <button onClick={clearAllNotifications} disabled={clearingAll} className="text-xs transition disabled:opacity-50"
+                        style={{ color: "#FF6B4A" }}>
+                        {clearingAll ? "Clearing..." : "Clear all"}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="max-h-72 overflow-y-auto">
                   {notifications.length === 0 ? (
@@ -183,8 +224,8 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
                       No notifications yet.
                     </p>
                   ) : notifications.map(n => (
-                    <button key={n.id} onClick={() => markAsRead(n.id)}
-                      className="w-full text-left px-4 py-3 last:border-0 transition-colors"
+                    <div key={n.id}
+                      className="group w-full text-left px-4 py-3 last:border-0 transition-colors flex items-start gap-2"
                       style={{
                         borderBottom: "1px solid var(--border)",
                         backgroundColor: n.read ? "transparent" : "#00B7FF08",
@@ -192,7 +233,7 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
                       onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--card)"}
                       onMouseLeave={e => e.currentTarget.style.backgroundColor = n.read ? "transparent" : "#00B7FF08"}
                     >
-                      <div className="flex items-start gap-2">
+                      <button onClick={() => markAsRead(n.id)} className="flex items-start gap-2 flex-1 min-w-0 text-left">
                         {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-[#00B7FF] mt-1.5 flex-shrink-0" />}
                         <div className="min-w-0">
                           <p className="text-xs font-semibold" style={{ color: "var(--text)" }}>{n.title}</p>
@@ -201,10 +242,27 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
                             {new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                           </p>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteNotification(n.id); }}
+                        className="flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 transition"
+                        style={{ color: "var(--text-muted)" }}
+                        onMouseEnter={e => (e.currentTarget.style.color = "#FF6B4A")}
+                        onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+                        title="Delete notification"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   ))}
                 </div>
+                <button
+                  onClick={() => { setNotifOpen(false); router.push("/projects/notifications"); }}
+                  className="w-full text-center py-2.5 text-xs font-semibold transition"
+                  style={{ color: accentColor, borderTop: "1px solid var(--border)" }}
+                >
+                  View all
+                </button>
               </div>
             )}
           </div>

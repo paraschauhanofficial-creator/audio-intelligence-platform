@@ -23,16 +23,12 @@ interface ProjectStats {
   completed: number;
 }
 
-// Display fields (projects label, color) stay here — the actual byte
-// numbers come from STORAGE_BUDGET in usageTracking.ts, single source of
-// truth, so they can never drift out of sync with what's enforced.
 const PLAN_DISPLAY: Record<string, { projects: string; color: string }> = {
   free:   { projects: "2 total",   color: "#6B7280" },
   pro:    { projects: "5 / month", color: "#00B7FF" },
   studio: { projects: "Unlimited", color: "#F0A500" },
 };
 
-// Imported from usageTracking.ts — single source of truth, no local copy.
 import { EGRESS_BUDGET, STORAGE_BUDGET, checkUsageSlabsAndNotify } from "@/lib/usageTracking";
 
 function formatBytes(bytes: number) {
@@ -43,25 +39,25 @@ function formatBytes(bytes: number) {
 }
 
 function Meter({
-  label, used, total, color, icon: Icon, note,
-}: { label: string; used: number; total: number; color: string; icon: any; note?: string }) {
+  label, used, total, color, icon: Icon, note, isDarkMode,
+}: { label: string; used: number; total: number; color: string; icon: any; note?: string; isDarkMode: boolean }) {
   const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
-  const isHot = pct >= 90;
+  const isHot  = pct >= 90;
   const isWarm = pct >= 70 && pct < 90;
   const barColor = isHot ? "#FF6B4A" : isWarm ? "#F0A500" : color;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <span className="flex items-center gap-1.5 text-xs text-zinc-400">
-          <Icon size={13} className="text-zinc-500" />
+        <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
+          <Icon size={13} style={{ color: "var(--text-muted)" }} />
           {label}
         </span>
-        <span className="text-xs text-zinc-300">
-          {formatBytes(used)} <span className="text-zinc-600">/ {formatBytes(total)}</span>
+        <span className="text-xs" style={{ color: "var(--text)" }}>
+          {formatBytes(used)} <span style={{ color: "var(--text-muted)" }}>/ {formatBytes(total)}</span>
         </span>
       </div>
-      <div className="w-full h-1.5 bg-[#0A0A0A] rounded-full overflow-hidden">
+      <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "var(--background)" }}>
         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: barColor }} />
       </div>
       {isHot && (
@@ -69,23 +65,46 @@ function Meter({
           You're close to your {label.toLowerCase()} limit — consider upgrading or freeing up space.
         </p>
       )}
-      {note && !isHot && <p className="text-[10px] text-zinc-600 mt-1">{note}</p>}
+      {note && !isHot && <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>{note}</p>}
     </div>
   );
 }
 
 export default function ProfilePage() {
   const router = useRouter();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [stats, setStats] = useState<ProjectStats>({ total: 0, mixProjects: 0, stemsProjects: 0, completed: 0 });
+  const [profile, setProfile]               = useState<Profile | null>(null);
+  const [stats, setStats]                   = useState<ProjectStats>({ total: 0, mixProjects: 0, stemsProjects: 0, completed: 0 });
   const [recentProjects, setRecentProjects] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editingName, setEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState("");
-
-  const [storageUsedBytes, setStorageUsedBytes] = useState(0);
-  const [egressUsedBytes, setEgressUsedBytes] = useState(0);
+  const [loading, setLoading]               = useState(true);
+  const [editingName, setEditingName]       = useState(false);
+  const [nameInput, setNameInput]           = useState("");
+  const [storageUsedBytes, setStorageUsedBytes]           = useState(0);
+  const [egressUsedBytes, setEgressUsedBytes]             = useState(0);
   const [egressTrackingAvailable, setEgressTrackingAvailable] = useState(true);
+
+  // Theme — identical pattern to every other migrated page (see projects/page.tsx)
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [parallax, setParallax]     = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const saved = localStorage.getItem("nokashi-theme");
+    setIsDarkMode(saved !== "light");
+    const observer = new MutationObserver(() => {
+      setIsDarkMode(!document.documentElement.classList.contains("theme-light"));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const x = (e.clientX / window.innerWidth - 0.5) * -20;
+      const y = (e.clientY / window.innerHeight - 0.5) * -14;
+      setParallax({ x, y });
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
 
   useEffect(() => { loadProfile(); }, []);
 
@@ -110,13 +129,10 @@ export default function ProfilePage() {
       const mixProjects   = projects.filter(p => p.workflow === "ai_assisted" || p.workflow === "producer_mode").length;
       const stemsProjects = projects.filter(p => p.workflow === "ai_assisted_stems" || p.workflow === "producer_mode_stems").length;
       const completed     = projects.filter(p => p.status === "completed").length;
-
       setStats({ total: projects.length, mixProjects, stemsProjects, completed });
       setRecentProjects(projects.slice(0, 5));
     }
 
-    // Real storage used — sum of file_size across both upload tables.
-    // (file_size must be populated at upload time; rows without it count as 0.)
     const [{ data: mixFiles }, { data: stemFiles }] = await Promise.all([
       supabase.from("project_files").select("file_size").eq("user_id", user.id),
       supabase.from("project_stems").select("file_size").eq("user_id", user.id),
@@ -125,9 +141,6 @@ export default function ProfilePage() {
     const stemBytes = (stemFiles ?? []).reduce((sum, f: any) => sum + (f.file_size ?? 0), 0);
     setStorageUsedBytes(mixBytes + stemBytes);
 
-    // Real monthly preview/playback egress — bytes_actual is the real
-    // transferred byte count logged by fetchAndLogAudio() on every
-    // waveform load, master waveform load, and download in [id]/page.tsx.
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
@@ -139,17 +152,12 @@ export default function ProfilePage() {
       .gte("created_at", startOfMonth.toISOString());
 
     if (eventsErr) {
-      // Table missing or RLS misconfigured — show the meter as "not yet
-      // tracked" rather than a broken 0/0 bar.
       setEgressTrackingAvailable(false);
     } else {
       setEgressUsedBytes((events ?? []).reduce((sum, e: any) => sum + (e.bytes_actual ?? 0), 0));
     }
 
-    // Fire-and-forget — checks slabs and inserts a notification if crossed,
-    // doesn't block the page from finishing its load.
     checkUsageSlabsAndNotify();
-
     setLoading(false);
   };
 
@@ -166,41 +174,44 @@ export default function ProfilePage() {
 
   const roleBadge = (role: string) => {
     switch (role) {
-      case "admin":
-        return { label: "Admin", color: "#FF6B4A", icon: Shield };
-      case "super_user":
-        return { label: "Super User", color: "#F0A500", icon: Crown };
-      default:
-        return null;
+      case "admin":      return { label: "Admin",      color: "#FF6B4A", icon: Shield };
+      case "super_user": return { label: "Super User", color: "#F0A500", icon: Crown  };
+      default:           return null;
     }
   };
 
   if (loading || !profile) {
     return (
-      <div className="min-h-screen bg-[#0A0A0A] text-white relative">
-        <AudioBackground />
+      <div className="min-h-screen relative" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
+        <AudioBackground parallax={parallax} lightMode={!isDarkMode} />
         <Navbar accentColor={accentColor} />
-        <div className="relative z-10 flex items-center justify-center h-[60vh] text-zinc-500">Loading profile...</div>
+        <div className="relative z-10 flex items-center justify-center h-[60vh]" style={{ color: "var(--text-muted)" }}>
+          Loading profile...
+        </div>
       </div>
     );
   }
 
-  const badge = roleBadge(profile.role);
-  const planDisplay = PLAN_DISPLAY[profile.plan];
+  const badge            = roleBadge(profile.role);
+  const planDisplay      = PLAN_DISPLAY[profile.plan];
   const planStorageBytes = STORAGE_BUDGET[profile.plan];
-  const egressBudget = EGRESS_BUDGET[profile.plan];
-  const initials = (profile.full_name || profile.email).slice(0, 2).toUpperCase();
-  const isUnlimited = profile.role === "admin" || profile.role === "super_user";
+  const egressBudget     = EGRESS_BUDGET[profile.plan];
+  const initials         = (profile.full_name || profile.email).slice(0, 2).toUpperCase();
+  const isUnlimited      = profile.role === "admin" || profile.role === "super_user";
+  const inputBg          = isDarkMode ? "#0A0A0A" : "rgba(255,255,255,0.6)";
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white relative">
-      <AudioBackground />
-      <Navbar accentColor={accentColor} />
+    <div className="min-h-screen relative" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
+      <AudioBackground parallax={parallax} lightMode={!isDarkMode} />
+      <div className="relative z-20">
+        <Navbar accentColor={accentColor} />
+      </div>
 
       <div className="relative z-10 max-w-5xl mx-auto px-8 py-12">
 
         {/* Identity card */}
-        <div className="bg-[#111827]/80 backdrop-blur-sm border border-[#1F2937] rounded-2xl p-8 mb-6 flex items-center gap-6">
+        <div className="backdrop-blur-sm rounded-2xl p-8 mb-6 flex items-center gap-6 border"
+          style={{ backgroundColor: isDarkMode ? "rgba(17,24,39,0.8)" : "rgba(234,228,216,0.85)", borderColor: "var(--border)" }}>
           <div className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold flex-shrink-0"
             style={{ backgroundColor: accentColor + "20", color: accentColor }}>
             {initials}
@@ -213,16 +224,21 @@ export default function ProfilePage() {
                   <input
                     type="text" value={nameInput} onChange={e => setNameInput(e.target.value)}
                     placeholder="Your name"
-                    className="bg-[#0A0A0A] border border-[#1F2937] rounded-lg px-3 py-1.5 text-xl font-bold focus:outline-none focus:border-[#00B7FF]"
+                    className="rounded-lg px-3 py-1.5 text-xl font-bold focus:outline-none border transition"
+                    style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
+                    onFocus={e => (e.currentTarget.style.borderColor = accentColor)}
+                    onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}
                     autoFocus
                   />
                   <button onClick={saveName} className="px-3 py-1.5 rounded-lg text-sm font-semibold" style={{ backgroundColor: accentColor, color: "#000" }}>Save</button>
-                  <button onClick={() => { setEditingName(false); setNameInput(profile.full_name || ""); }} className="px-3 py-1.5 rounded-lg border border-[#1F2937] text-sm">Cancel</button>
+                  <button onClick={() => { setEditingName(false); setNameInput(profile.full_name || ""); }}
+                    className="px-3 py-1.5 rounded-lg border text-sm transition"
+                    style={{ borderColor: "var(--border)", color: "var(--text)" }}>Cancel</button>
                 </div>
               ) : (
                 <>
-                  <h2 className="text-2xl font-bold">{profile.full_name || "Add your name"}</h2>
-                  <button onClick={() => setEditingName(true)} className="text-xs text-zinc-500 hover:text-zinc-300 transition">Edit</button>
+                  <h2 className="text-2xl font-bold" style={{ color: "var(--text)" }}>{profile.full_name || "Add your name"}</h2>
+                  <button onClick={() => setEditingName(true)} className="text-xs transition" style={{ color: "var(--text-muted)" }}>Edit</button>
                 </>
               )}
 
@@ -234,8 +250,8 @@ export default function ProfilePage() {
                 </span>
               )}
             </div>
-            <p className="text-zinc-400 text-sm">{profile.email}</p>
-            <p className="text-zinc-600 text-xs mt-1">
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>{profile.email}</p>
+            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
               Member since {new Date(profile.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
             </p>
           </div>
@@ -244,9 +260,10 @@ export default function ProfilePage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6 mb-6">
 
           {/* Plan card */}
-          <div className="bg-[#111827]/80 backdrop-blur-sm border border-[#1F2937] rounded-2xl p-6">
+          <div className="backdrop-blur-sm rounded-2xl p-6 border"
+            style={{ backgroundColor: isDarkMode ? "rgba(17,24,39,0.8)" : "rgba(234,228,216,0.85)", borderColor: "var(--border)" }}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Current Plan</h3>
+              <h3 className="text-lg font-semibold" style={{ color: "var(--text)" }}>Current Plan</h3>
               {isUnlimited ? (
                 <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full"
                   style={{ backgroundColor: "#F0A50020", color: "#F0A500" }}>
@@ -269,32 +286,20 @@ export default function ProfilePage() {
                   <p className="text-lg font-bold" style={{ color: "#F0A500" }}>
                     {profile.role === "admin" ? "Administrator" : "Super User"}
                   </p>
-                  <p className="text-xs text-zinc-500 mt-1">Unlimited feature access — generous resource ceiling still applies</p>
+                  <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Unlimited feature access — generous resource ceiling still applies</p>
                 </div>
-                <div className="space-y-4 pt-4 border-t border-[#1F2937]">
-                  <Meter
-                    label="Project storage"
-                    used={storageUsedBytes}
-                    total={25 * 1024 * 1024 * 1024}
-                    color="#F0A500"
-                    icon={HardDrive}
-                  />
+                <div className="space-y-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+                  <Meter label="Project storage" used={storageUsedBytes} total={25 * 1024 * 1024 * 1024} color="#F0A500" icon={HardDrive} isDarkMode={isDarkMode} />
                   {egressTrackingAvailable ? (
-                    <Meter
-                      label="Preview & playback (this month)"
-                      used={egressUsedBytes}
-                      total={20 * 1024 * 1024 * 1024}
-                      color="#F0A500"
-                      icon={Waves}
-                      note="Real bytes transferred this month — admin/super_user are capped at the same ceiling as Studio, not literal infinity."
-                    />
+                    <Meter label="Preview & playback (this month)" used={egressUsedBytes} total={20 * 1024 * 1024 * 1024} color="#F0A500" icon={Waves} isDarkMode={isDarkMode}
+                      note="Real bytes transferred this month — admin/super_user are capped at the same ceiling as Studio, not literal infinity." />
                   ) : (
                     <div>
-                      <span className="flex items-center gap-1.5 text-xs text-zinc-400 mb-1.5">
-                        <Waves size={13} className="text-zinc-500" />
+                      <span className="flex items-center gap-1.5 text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>
+                        <Waves size={13} style={{ color: "var(--text-muted)" }} />
                         Preview & playback
                       </span>
-                      <p className="text-[11px] text-zinc-600">Usage tracking not set up yet for this account.</p>
+                      <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>Usage tracking not set up yet for this account.</p>
                     </div>
                   )}
                 </div>
@@ -304,39 +309,26 @@ export default function ProfilePage() {
                 <p className="text-3xl font-bold capitalize mb-4" style={{ color: planDisplay.color }}>{profile.plan}</p>
                 <div className="space-y-3 mb-5">
                   <div className="flex justify-between text-sm">
-                    <span className="text-zinc-500">Storage limit</span>
-                    <span className="text-zinc-200">{formatBytes(planStorageBytes)}</span>
+                    <span style={{ color: "var(--text-muted)" }}>Storage limit</span>
+                    <span style={{ color: "var(--text)" }}>{formatBytes(planStorageBytes)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-zinc-500">Projects</span>
-                    <span className="text-zinc-200">{planDisplay.projects}</span>
+                    <span style={{ color: "var(--text-muted)" }}>Projects</span>
+                    <span style={{ color: "var(--text)" }}>{planDisplay.projects}</span>
                   </div>
                 </div>
-
-                <div className="space-y-4 pt-4 border-t border-[#1F2937]">
-                  <Meter
-                    label="Project storage"
-                    used={storageUsedBytes}
-                    total={planStorageBytes}
-                    color={planDisplay.color}
-                    icon={HardDrive}
-                  />
+                <div className="space-y-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+                  <Meter label="Project storage" used={storageUsedBytes} total={planStorageBytes} color={planDisplay.color} icon={HardDrive} isDarkMode={isDarkMode} />
                   {egressTrackingAvailable ? (
-                    <Meter
-                      label="Preview & playback (this month)"
-                      used={egressUsedBytes}
-                      total={egressBudget}
-                      color={planDisplay.color}
-                      icon={Waves}
-                      note="Real bytes transferred this month — not your exact Supabase bill (cached egress is billed cheaper by Supabase but counted at full size here)."
-                    />
+                    <Meter label="Preview & playback (this month)" used={egressUsedBytes} total={egressBudget} color={planDisplay.color} icon={Waves} isDarkMode={isDarkMode}
+                      note="Real bytes transferred this month — not your exact Supabase bill (cached egress is billed cheaper by Supabase but counted at full size here)." />
                   ) : (
                     <div>
-                      <span className="flex items-center gap-1.5 text-xs text-zinc-400 mb-1.5">
-                        <Waves size={13} className="text-zinc-500" />
+                      <span className="flex items-center gap-1.5 text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>
+                        <Waves size={13} style={{ color: "var(--text-muted)" }} />
                         Preview & playback
                       </span>
-                      <p className="text-[11px] text-zinc-600">Usage tracking not set up yet for this account.</p>
+                      <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>Usage tracking not set up yet for this account.</p>
                     </div>
                   )}
                 </div>
@@ -345,29 +337,30 @@ export default function ProfilePage() {
           </div>
 
           {/* Stats grid */}
-          <div className="bg-[#111827]/80 backdrop-blur-sm border border-[#1F2937] rounded-2xl p-6">
-            <h3 className="text-lg font-semibold mb-4">Your Activity</h3>
+          <div className="backdrop-blur-sm rounded-2xl p-6 border"
+            style={{ backgroundColor: isDarkMode ? "rgba(17,24,39,0.8)" : "rgba(234,228,216,0.85)", borderColor: "var(--border)" }}>
+            <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text)" }}>Your Activity</h3>
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-[#0A0A0A] rounded-xl p-4">
+              <div className="rounded-xl p-4" style={{ backgroundColor: "var(--background)" }}>
                 <p className="text-3xl font-bold" style={{ color: accentColor }}>{stats.total}</p>
-                <p className="text-xs text-zinc-500 mt-1">Total Projects</p>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Total Projects</p>
               </div>
-              <div className="bg-[#0A0A0A] rounded-xl p-4">
+              <div className="rounded-xl p-4" style={{ backgroundColor: "var(--background)" }}>
                 <p className="text-3xl font-bold" style={{ color: "#14D8C4" }}>{stats.completed}</p>
-                <p className="text-xs text-zinc-500 mt-1">Completed</p>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Completed</p>
               </div>
-              <div className="bg-[#0A0A0A] rounded-xl p-4 flex items-center gap-3">
-                <Music2 size={20} className="text-zinc-600" />
+              <div className="rounded-xl p-4 flex items-center gap-3" style={{ backgroundColor: "var(--background)" }}>
+                <Music2 size={20} style={{ color: "var(--text-muted)" }} />
                 <div>
-                  <p className="text-xl font-bold text-zinc-200">{stats.mixProjects}</p>
-                  <p className="text-xs text-zinc-500">Mix Projects</p>
+                  <p className="text-xl font-bold" style={{ color: "var(--text)" }}>{stats.mixProjects}</p>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>Mix Projects</p>
                 </div>
               </div>
-              <div className="bg-[#0A0A0A] rounded-xl p-4 flex items-center gap-3">
-                <Mic2 size={20} className="text-zinc-600" />
+              <div className="rounded-xl p-4 flex items-center gap-3" style={{ backgroundColor: "var(--background)" }}>
+                <Mic2 size={20} style={{ color: "var(--text-muted)" }} />
                 <div>
-                  <p className="text-xl font-bold text-zinc-200">{stats.stemsProjects}</p>
-                  <p className="text-xs text-zinc-500">Stems Projects</p>
+                  <p className="text-xl font-bold" style={{ color: "var(--text)" }}>{stats.stemsProjects}</p>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>Stems Projects</p>
                 </div>
               </div>
             </div>
@@ -375,28 +368,37 @@ export default function ProfilePage() {
         </div>
 
         {/* Recent projects */}
-        <div className="bg-[#111827]/80 backdrop-blur-sm border border-[#1F2937] rounded-2xl p-6">
+        <div className="backdrop-blur-sm rounded-2xl p-6 border"
+          style={{ backgroundColor: isDarkMode ? "rgba(17,24,39,0.8)" : "rgba(234,228,216,0.85)", borderColor: "var(--border)" }}>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Recent Projects</h3>
-            <button onClick={() => router.push("/projects/list")} className="text-xs text-zinc-500 hover:text-zinc-300 transition">View all</button>
+            <h3 className="text-lg font-semibold" style={{ color: "var(--text)" }}>Recent Projects</h3>
+            <button onClick={() => router.push("/projects/list")} className="text-xs transition"
+              style={{ color: "var(--text-muted)" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "var(--text)")}
+              onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}>
+              View all
+            </button>
           </div>
 
           {recentProjects.length === 0 ? (
-            <p className="text-sm text-zinc-600 text-center py-8">No projects yet. Start creating!</p>
+            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>No projects yet. Start creating!</p>
           ) : (
             <div className="space-y-2">
               {recentProjects.map((p, i) => {
-                const isStems = p.workflow?.includes("stems");
                 const isProducer = p.workflow?.includes("producer");
                 const color = isProducer ? "#14D8C4" : "#00B7FF";
+                const isStems = p.workflow?.includes("stems");
                 return (
-                  <div key={i} className="flex items-center justify-between px-4 py-3 rounded-lg border border-[#1F2937] hover:border-[#374151] transition">
+                  <div key={i} className="flex items-center justify-between px-4 py-3 rounded-lg border transition"
+                    style={{ borderColor: "var(--border)" }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = isDarkMode ? "#374151" : "#a1a1aa")}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
                     <div className="flex items-center gap-3">
                       {isStems ? <Mic2 size={16} style={{ color }} /> : <Music2 size={16} style={{ color }} />}
-                      <span className="text-sm text-zinc-200">{p.name}</span>
+                      <span className="text-sm" style={{ color: "var(--text)" }}>{p.name}</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-xs text-zinc-600">
+                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
                         {new Date(p.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                       </span>
                       <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full"
@@ -410,7 +412,6 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
-
       </div>
     </div>
   );

@@ -242,13 +242,15 @@ export default function StemsProjectPage() {
     }
 
     // Update project stems_analysed count
+    // select("*") not just processing_stage — we need tempo/key from fresh DB data,
+    // not the stale React state closure which still has nulls from before analysis ran
     const { data: allStems } = await supabase
-      .from("project_stems").select("processing_stage").eq("project_id", projectId);
+      .from("project_stems").select("*").eq("project_id", projectId);
     const doneCount = allStems?.filter(s => s.processing_stage === "analysed").length ?? 0;
 
-    // Pick tempo from drums, key from melodic stem
-    const drumStem    = stems.find(s => s.section === "drums" && s.tempo);
-    const melodicStem = stems.find(s => s.musical_key);
+    // Pick tempo from drums, key from melodic stem — using fresh DB rows, not stale closure
+    const drumStem    = allStems?.find(s => s.section === "drums" && s.tempo);
+    const melodicStem = allStems?.find(s => s.musical_key);
 
     await supabase.from("projects").update({
       stems_analysed: doneCount,
