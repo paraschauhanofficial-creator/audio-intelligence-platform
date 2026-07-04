@@ -87,6 +87,9 @@ export default function DAWPage() {
   const [soloTrack,    setSoloTrack]    = useState<string | null>(null);
 
   // Inspector / layout
+  // Mobile tab navigation — purely UI, no audio logic
+  const [mobileTab, setMobileTab] = useState<"tracks"|"timeline"|"mixer"|"inspector">("timeline");
+
   const [inspectorContext, setInspectorContext] = useState<"master"|"track">("master");
   const [inspectorView,    setInspectorView]    = useState<"main"|"sends">("main");
   const [selectedPlugin,   setSelectedPlugin]   = useState<"gain"|"eq"|"saturation"|"limiter">("gain");
@@ -1046,36 +1049,34 @@ export default function DAWPage() {
       )}
 
       {/* ── Header ── */}
-      <div className="h-[72px] px-8 flex items-center flex-shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
-        <div className="flex items-center justify-between w-full">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold" style={{ color: "var(--text)" }}>Producer Workspace</h1>
-            {isStemsProject && (
-              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border"
-                style={{ color: trackColor, borderColor: trackColor + "40", backgroundColor: trackColor + "15" }}>
-                Stems
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {exportStatus && <span className="text-sm" style={{ color: exportStatus.includes("✓") ? trackColor : masterColor }}>{exportStatus}</span>}
-            <button onClick={handleExport} disabled={isExporting}
-              className="px-4 py-2 rounded-lg font-semibold transition disabled:opacity-50"
-              style={{ backgroundColor: masterColor, color: "#000" }}>
-              {isExporting ? "Processing..." : "Export Master"}
-            </button>
-            <button onClick={() => router.back()} className="px-4 py-2 rounded-lg border transition"
-              style={{ borderColor: "var(--border)", color: "var(--text)" }}>
-              Back To Project
-            </button>
-          </div>
+      <div className="md:h-[72px] px-4 md:px-8 py-3 md:py-0 flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-0 flex-shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
+          <h1 className="text-lg md:text-2xl font-bold truncate" style={{ color: "var(--text)" }}>Producer Workspace</h1>
+          {isStemsProject && (
+            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded border flex-shrink-0"
+              style={{ color: trackColor, borderColor: trackColor + "40", backgroundColor: trackColor + "15" }}>
+              Stems
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {exportStatus && <span className="text-xs md:text-sm" style={{ color: exportStatus.includes("✓") ? trackColor : masterColor }}>{exportStatus}</span>}
+          <button onClick={handleExport} disabled={isExporting}
+            className="flex-1 md:flex-none px-3 md:px-4 py-2 rounded-lg font-semibold text-xs md:text-sm transition disabled:opacity-50"
+            style={{ backgroundColor: masterColor, color: "#000" }}>
+            {isExporting ? "Processing..." : "Export Master"}
+          </button>
+          <button onClick={() => router.back()} className="flex-1 md:flex-none px-3 md:px-4 py-2 rounded-lg border text-xs md:text-sm transition"
+            style={{ borderColor: "var(--border)", color: "var(--text)" }}>
+            Back
+          </button>
         </div>
       </div>
 
       <div className="p-4 flex-1 overflow-hidden flex flex-col">
 
         {/* ── Session Bar ── */}
-        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_2fr] gap-4 mb-4 flex-shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-[2fr_1fr_1fr_1fr_2fr] gap-2 md:gap-4 mb-3 md:mb-4 flex-shrink-0">
           <div className="rounded-xl p-3 border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>Project</p>
             <p className="text-xl font-semibold truncate" style={{ color: "var(--text)" }}>{project.name}</p>
@@ -1118,11 +1119,26 @@ export default function DAWPage() {
           </div>
         </div>
 
+        {/* ── Mobile tab bar ── */}
+        <div className="flex md:hidden gap-1 mb-3 flex-shrink-0">
+          {(["timeline","mixer","tracks","inspector"] as const).map(tab => (
+            <button key={tab} onClick={() => setMobileTab(tab)}
+              className="flex-1 py-2 rounded-lg text-xs font-semibold capitalize border transition"
+              style={{
+                backgroundColor: mobileTab === tab ? trackColor + "20" : "transparent",
+                borderColor:     mobileTab === tab ? trackColor : "var(--border)",
+                color:           mobileTab === tab ? trackColor : "var(--text-muted)",
+              }}>
+              {tab}
+            </button>
+          ))}
+        </div>
+
         {/* ── Workspace ── */}
-        <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-[160px_1fr_220px_80px_60px] gap-4">
+        <div className="flex-1 min-h-0 overflow-hidden md:grid md:grid-cols-[160px_1fr_220px_80px_60px] md:gap-4 flex flex-col">
 
           {/* Tracks list */}
-          <div className="rounded-2xl p-4 overflow-y-auto min-h-0 flex flex-col border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+          <div className={`rounded-2xl p-4 overflow-y-auto min-h-0 flex-col border ${mobileTab === "tracks" ? "flex" : "hidden md:flex"}`} style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
             <h3 className="text-xs font-semibold mb-4 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Tracks</h3>
             <div className="space-y-2 flex-1">
               {tracks.map((track, i) => {
@@ -1153,23 +1169,38 @@ export default function DAWPage() {
           </div>
 
           {/* Timeline + Mixer */}
-          <div className="h-full flex flex-col gap-4 overflow-hidden">
+          <div className={`flex-col gap-0 overflow-hidden h-full ${mobileTab === "timeline" || mobileTab === "mixer" ? "flex" : "hidden md:flex"}`}
+            style={{ display: "flex" }}>
 
             {/* Timeline */}
-            <div className={`rounded-2xl p-4 flex flex-col min-h-0 border ${
-              expandedView === "timeline" ? "flex-1" : expandedView === "mixer" ? "hidden" : "h-[60%]"
-            }`} style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Timeline</h3>
-                <div className="flex items-center gap-4">
+            <div className="rounded-2xl flex flex-col min-h-0 border overflow-hidden"
+              style={{
+                backgroundColor: "var(--surface)",
+                borderColor: "var(--border)",
+                flex: expandedView === "timeline" ? "1 1 75%" : expandedView === "mixer" ? "0 0 40px" : "1 1 60%",
+                height: expandedView === "timeline" ? "75%" : expandedView === "mixer" ? "40px" : "60%",
+                transition: "flex 0.3s ease, height 0.3s ease",
+                marginBottom: 8,
+              }}>
+              <div className="flex items-center justify-between px-3 md:px-4 flex-shrink-0"
+                style={{ height: 40, borderBottom: expandedView === "mixer" ? "none" : "1px solid var(--border)" }}>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Timeline</h3>
                   <span className="text-xs font-mono" style={{ color: trackColor }}>{currentTime} / {duration}</span>
-                  <button onClick={() => setExpandedView(expandedView === "timeline" ? "none" : "timeline")}
-                    className="text-xs transition" style={{ color: "var(--text-muted)" }}>
-                    {expandedView === "timeline" ? "Restore" : "Expand"}
-                  </button>
                 </div>
+                <button
+                  onClick={() => setExpandedView(expandedView === "timeline" ? "none" : "timeline")}
+                  className="text-xs px-2 py-1 rounded border transition flex-shrink-0"
+                  style={{
+                    borderColor: expandedView === "timeline" ? trackColor : "var(--border)",
+                    color: expandedView === "timeline" ? trackColor : "var(--text-muted)",
+                    backgroundColor: expandedView === "timeline" ? trackColor + "15" : "transparent",
+                  }}>
+                  {expandedView === "timeline" ? "↑ Restore" : "↓ Expand"}
+                </button>
               </div>
-              <div className="flex mb-1 flex-shrink-0">
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-3 md:p-4 pt-2">
+              <div className="flex mb-1 flex-shrink-0 mt-0">
                 <div className="flex-shrink-0" style={{ width: trackHeaderWidth }}/>
                 <div className="flex-1 grid grid-cols-12 text-[10px]" style={{ color: "var(--text-muted)" }}>
                   {Array.from({ length: 12 }).map((_, i) => (
@@ -1226,17 +1257,35 @@ export default function DAWPage() {
                   })}
                 </div>
               </div>
+              </div>
             </div>
 
             {/* ── MIXER ── */}
-            <div className={`rounded-2xl flex flex-col min-h-0 border ${
-              expandedView === "timeline" ? "hidden" : expandedView === "mixer" ? "flex-1" : "h-[40%]"
-            }`} style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
-              <div className="flex items-center justify-between px-4 py-2 flex-shrink-0" style={{ borderBottom: "1px solid var(--border)" }}>
-                <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Mixer</h3>
-                <button onClick={() => setExpandedView(expandedView === "mixer" ? "none" : "mixer")}
-                  className="text-xs transition" style={{ color: "var(--text-muted)" }}>
-                  {expandedView === "mixer" ? "Restore" : "Expand"}
+            <div className="rounded-2xl flex flex-col min-h-0 border overflow-hidden"
+              style={{
+                backgroundColor: "var(--surface)",
+                borderColor: "var(--border)",
+                flex: expandedView === "mixer" ? "1 1 75%" : expandedView === "timeline" ? "0 0 40px" : "1 1 40%",
+                height: expandedView === "mixer" ? "75%" : expandedView === "timeline" ? "40px" : "40%",
+                transition: "flex 0.3s ease, height 0.3s ease",
+              }}>
+              <div className="flex items-center justify-between px-4 flex-shrink-0"
+                style={{ height: 40, borderBottom: "1px solid var(--border)" }}>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Mixer</h3>
+                  {expandedView === "timeline" && (
+                    <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>minimised</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setExpandedView(expandedView === "mixer" ? "none" : "mixer")}
+                  className="text-xs px-2 py-1 rounded border transition flex-shrink-0"
+                  style={{
+                    borderColor: expandedView === "mixer" ? masterColor : "var(--border)",
+                    color: expandedView === "mixer" ? masterColor : "var(--text-muted)",
+                    backgroundColor: expandedView === "mixer" ? masterColor + "15" : "transparent",
+                  }}>
+                  {expandedView === "mixer" ? "↓ Restore" : "↑ Expand"}
                 </button>
               </div>
 
@@ -1325,7 +1374,7 @@ export default function DAWPage() {
           </div>
 
           {/* Inspector */}
-          <div className="rounded-2xl overflow-hidden min-h-0 flex flex-col border" style={{ backgroundColor: "var(--surface)", borderColor: inspectorAccent + "40" }}>
+          <div className={`rounded-2xl overflow-hidden min-h-0 flex-col border ${mobileTab === "inspector" ? "flex" : "hidden md:flex"}`} style={{ backgroundColor: "var(--surface)", borderColor: inspectorAccent + "40" }}>
             <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: `1px solid ${inspectorAccent}30` }}>
               <span className="text-xs font-bold uppercase tracking-wider" style={{ color: inspectorAccent }}>
                 {inspectorContext === "master" ? "⬡ Master Chain" : selectedTrack}
@@ -1439,36 +1488,98 @@ export default function DAWPage() {
           </div>
 
           {/* Channel Strip */}
-          <div className="rounded-2xl p-3 overflow-hidden min-h-0 flex flex-col border"
+          <div className={`rounded-2xl p-3 overflow-hidden min-h-0 flex-col border ${mobileTab === "inspector" ? "flex" : "hidden md:flex"}`}
             style={{ backgroundColor: "var(--surface)", borderColor: inspectorContext === "track" ? inspectorAccent + "40" : "var(--border)" }}>
-            <h3 className="text-center text-[11px] font-semibold mb-2" style={{ color: inspectorAccent }}>
+            <h3 className="text-center text-[11px] font-semibold mb-1" style={{ color: inspectorAccent }}>
               {inspectorContext === "track" ? selectedTrack?.slice(0, 8) || "Track" : "Track"}
             </h3>
-            <p className="text-center text-[9px] mb-3" style={{ color: "var(--text-muted)" }}>TRACK</p>
-            <div className="flex-1 min-h-0 flex items-center justify-center gap-1">
+            <p className="text-center text-[9px] mb-2" style={{ color: "var(--text-muted)" }}>TRACK</p>
+            {/* VU bar + fader rail side by side — share full available height for max fader travel */}
+            <div className="flex-1 min-h-0 flex items-center justify-center gap-2">
               <div className="text-[7px] flex flex-col justify-between h-full" style={{ color: "var(--text-muted)" }}>
                 {["0","-6","-12","-18","-24","-30"].map(m => <span key={m}>{m}</span>)}
               </div>
-              <div className="w-3 h-full rounded-full relative overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
+              {/* VU bar */}
+              <div className="w-3 h-full rounded-full relative overflow-hidden flex-shrink-0" style={{ backgroundColor: "var(--border)" }}>
                 <div className="absolute bottom-0 left-0 right-0 rounded-full"
                   style={{ height: `${isPlaying ? vuLevel : 0}%`, backgroundColor: vuLevel > 85 ? "#EF4444" : vuLevel > 60 ? masterColor : inspectorAccent, transition: "height 0.05s,background-color 0.1s" }}/>
+              </div>
+              {/* Track fader rail — full height, inline with VU */}
+              <div className="flex flex-col items-center h-full flex-shrink-0" style={{ width: 20 }}>
+                {inspectorContext === "track" && selectedTrack ? (
+                  <>
+                    <input
+                      type="range" min={-40} max={6} step={0.1}
+                      value={trackVolumes[selectedTrack] ?? 0}
+                      onChange={e => {
+                        const v = parseFloat(e.target.value);
+                        setTrackVolumes(prev => ({ ...prev, [selectedTrack]: v }));
+                        updateStemGain(selectedTrack, v);
+                      }}
+                      className="appearance-none cursor-pointer flex-1"
+                      style={{
+                        writingMode: "vertical-lr" as any,
+                        direction: "rtl" as any,
+                        width: 4,
+                        background: (() => {
+                          const v = trackVolumes[selectedTrack] ?? 0;
+                          const pct = ((v + 40) / 46) * 100;
+                          return `linear-gradient(to top,${inspectorAccent} 0%,${inspectorAccent} ${pct}%,var(--border) ${pct}%,var(--border) 100%)`;
+                        })(),
+                        borderRadius: 4,
+                      }}
+                    />
+                    <span className="text-[8px] font-mono mt-1 flex-shrink-0" style={{ color: inspectorAccent }}>
+                      {(trackVolumes[selectedTrack] ?? 0) > 0 ? "+" : ""}{(trackVolumes[selectedTrack] ?? 0).toFixed(1)}
+                    </span>
+                  </>
+                ) : (
+                  <div className="flex-1 w-1 rounded-full opacity-20" style={{ backgroundColor: "var(--border)" }}/>
+                )}
               </div>
             </div>
           </div>
 
           {/* Master Strip */}
-          <div className="rounded-2xl p-3 overflow-hidden min-h-0 flex flex-col cursor-pointer border"
+          <div className={`rounded-2xl p-3 overflow-hidden min-h-0 flex-col border ${mobileTab === "inspector" ? "flex" : "hidden md:flex"}`}
             style={{ backgroundColor: "var(--surface)", borderColor: inspectorContext === "master" ? masterColor + "80" : "var(--border)" }}
             onClick={selectMaster}>
-            <h3 className="text-center text-[11px] font-semibold mb-2" style={{ color: masterColor }}>MASTER</h3>
-            <p className="text-center text-[9px] mb-1" style={{ color: "var(--text-muted)" }}>{project.master_lufs?.toFixed(1)} LU</p>
-            <div className="flex-1 min-h-0 flex items-center justify-center gap-1">
+            <h3 className="text-center text-[11px] font-semibold mb-1" style={{ color: masterColor }}>MASTER</h3>
+            <p className="text-center text-[9px] mb-2" style={{ color: "var(--text-muted)" }}>{project.master_lufs?.toFixed(1)} LU</p>
+            {/* VU bar + master fader rail side by side — share full available height */}
+            <div className="flex-1 min-h-0 flex items-center justify-center gap-2"
+              onClick={e => e.stopPropagation()}>
               <div className="text-[7px] flex flex-col justify-between h-full" style={{ color: "var(--text-muted)" }}>
                 {["0","-6","-12","-18","-24","-30"].map(m => <span key={m}>{m}</span>)}
               </div>
-              <div className="w-3 h-full rounded-full relative overflow-hidden" style={{ backgroundColor: "var(--border)" }}>
+              {/* VU bar */}
+              <div className="w-3 h-full rounded-full relative overflow-hidden flex-shrink-0" style={{ backgroundColor: "var(--border)" }}>
                 <div className="absolute bottom-0 left-0 right-0 rounded-full"
                   style={{ height: `${isPlaying ? Math.min(100, vuLevel * 0.9) : 0}%`, backgroundColor: masterColor, transition: "height 0.05s" }}/>
+              </div>
+              {/* Master fader rail — full height, inline with VU.
+                  Wired to inputGain state — same as Inspector Gain knob.
+                  useEffect on inputGain handles Web Audio side automatically. */}
+              <div className="flex flex-col items-center h-full flex-shrink-0" style={{ width: 20 }}>
+                <input
+                  type="range" min={-20} max={20} step={0.1}
+                  value={inputGain}
+                  onChange={e => setInputGain(parseFloat(e.target.value))}
+                  className="appearance-none cursor-pointer flex-1"
+                  style={{
+                    writingMode: "vertical-lr" as any,
+                    direction: "rtl" as any,
+                    width: 4,
+                    background: (() => {
+                      const pct = ((inputGain + 20) / 40) * 100;
+                      return `linear-gradient(to top,${masterColor} 0%,${masterColor} ${pct}%,var(--border) ${pct}%,var(--border) 100%)`;
+                    })(),
+                    borderRadius: 4,
+                  }}
+                />
+                <span className="text-[8px] font-mono mt-1 flex-shrink-0" style={{ color: masterColor }}>
+                  {inputGain > 0 ? "+" : ""}{inputGain.toFixed(1)}
+                </span>
               </div>
             </div>
           </div>
