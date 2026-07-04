@@ -31,14 +31,14 @@ const CARDS = [
     active: true,
   },
   {
-    id: "instruments",
-    title: "Generate Instruments",
-    subtitle: "Coming Soon",
-    description: "Create AI-generated acoustic instrument melodies — piano, guitar, tabla and more — that fit perfectly in your track.",
-    color: "#A78BFA",
-    href: null,
-    active: false,
-  },
+  id: "instruments",
+  title: "Generate Instruments",
+  subtitle: "New",
+  description: "Create AI-generated acoustic instrument melodies — piano, guitar, tabla and more — that fit perfectly in your track.",
+  color: "#A78BFA",
+  href: "/projects/generate",
+  active: true,
+},
 ];
 
 export default function ProjectsPage() {
