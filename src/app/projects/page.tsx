@@ -1,51 +1,121 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
-import AudioBackground from "@/components/AudioBackground";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import Navbar from "@/components/Navbar";
-import { Swiper, SwiperSlide } from "swiper/react";
-import { EffectCoverflow, Navigation, Pagination } from "swiper/modules";
-import "swiper/css";
-import "swiper/css/effect-coverflow";
-import "swiper/css/navigation";
-import "swiper/css/pagination";
+import AudioBackground from "@/components/AudioBackground";
+import { generateRhythmPattern, generateMelodyPattern } from "@/intelligence/generator/patternGenerator";
+import { synthMelodyToWav, synthRhythmToWav } from "@/intelligence/generator/wavSynthesis";
+import { melodyToMidi, rhythmToMidi } from "@/intelligence/generator/midiExport";
 
-const CARDS = [
-  {
-    id: "ai",
-    title: "You Handle It",
-    subtitle: "AI Automated",
-    description: "Upload stems or a mix and let AI create a polished mix and master for you. Zero manual effort.",
-    color: "#00B7FF",
-    href: "/projects/create/ai",
-    active: true,
-  },
-  {
-    id: "producer",
-    title: "Take Control",
-    subtitle: "AI + DAW",
-    description: "Start with an AI-generated mix and customize every aspect of the production in the built-in DAW.",
-    color: "#14D8C4",
-    href: "/projects/create/producer",
-    active: true,
-  },
-  {
-  id: "instruments",
-  title: "Generate Instruments",
-  subtitle: "New",
-  description: "Create AI-generated acoustic instrument melodies — piano, guitar, tabla and more — that fit perfectly in your track.",
-  color: "#A78BFA",
-  href: "/projects/generate",
-  active: true,
-},
+// ─────────────────────────────────────────────────────────────────────────────
+// SCALE & TAAL DATA
+// ─────────────────────────────────────────────────────────────────────────────
+const NOTE_NAMES   = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const NOTE_DISPLAY = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+
+const WESTERN_SCALES = [
+  { id: "major",            name: "Major",              category: "western", intervals: [0,2,4,5,7,9,11],    degrees: ["1","2","3","4","5","6","7"] },
+  { id: "natural_minor",    name: "Natural Minor",       category: "western", intervals: [0,2,3,5,7,8,10],   degrees: ["1","2","♭3","4","5","♭6","♭7"] },
+  { id: "harmonic_minor",   name: "Harmonic Minor",      category: "western", intervals: [0,2,3,5,7,8,11],   degrees: ["1","2","♭3","4","5","♭6","7"] },
+  { id: "melodic_minor",    name: "Melodic Minor",       category: "western", intervals: [0,2,3,5,7,9,11],   degrees: ["1","2","♭3","4","5","6","7"] },
+  { id: "dorian",           name: "Dorian",              category: "western", intervals: [0,2,3,5,7,9,10],   degrees: ["1","2","♭3","4","5","6","♭7"] },
+  { id: "phrygian",         name: "Phrygian",            category: "western", intervals: [0,1,3,5,7,8,10],   degrees: ["1","♭2","♭3","4","5","♭6","♭7"] },
+  { id: "lydian",           name: "Lydian",              category: "western", intervals: [0,2,4,6,7,9,11],   degrees: ["1","2","3","♯4","5","6","7"] },
+  { id: "mixolydian",       name: "Mixolydian",          category: "western", intervals: [0,2,4,5,7,9,10],   degrees: ["1","2","3","4","5","6","♭7"] },
+  { id: "locrian",          name: "Locrian",             category: "western", intervals: [0,1,3,5,6,8,10],   degrees: ["1","♭2","♭3","4","♭5","♭6","♭7"] },
+  { id: "pentatonic_major", name: "Pentatonic Major",    category: "western", intervals: [0,2,4,7,9],        degrees: ["1","2","3","5","6"] },
+  { id: "pentatonic_minor", name: "Pentatonic Minor",    category: "western", intervals: [0,3,5,7,10],       degrees: ["1","♭3","4","5","♭7"] },
+  { id: "blues",            name: "Blues",               category: "western", intervals: [0,3,5,6,7,10],     degrees: ["1","♭3","4","♯4","5","♭7"] },
+  { id: "whole_tone",       name: "Whole Tone",          category: "western", intervals: [0,2,4,6,8,10],     degrees: ["1","2","3","♯4","♯5","♭7"] },
+  { id: "diminished",       name: "Diminished (WH)",     category: "western", intervals: [0,2,3,5,6,8,9,11], degrees: ["1","2","♭3","4","♭5","♭6","6","7"] },
+  { id: "phrygian_dom",     name: "Phrygian Dominant",   category: "western", intervals: [0,1,4,5,7,8,10],   degrees: ["1","♭2","3","4","5","♭6","♭7"] },
 ];
 
-export default function ProjectsPage() {
-  const router = useRouter();
-  const [current, setCurrent] = useState(0);
-  const [parallax, setParallax] = useState({ x: 0, y: 0 });
+const INDIAN_RAGAS = [
+  { id: "yaman",      name: "Yaman",          thaatOrigin: "Kalyan",   intervals: [0,2,4,6,7,9,11], swaras: ["Sa","Re","Ga","Ma♯","Pa","Dha","Ni"],       mood: "Romantic · Evening",  universalTS: "" },
+  { id: "bhairav",    name: "Bhairav",         thaatOrigin: "Bhairav",  intervals: [0,1,4,5,7,8,11], swaras: ["Sa","Re♭","Ga","Ma","Pa","Dha♭","Ni"],      mood: "Solemn · Morning",    universalTS: "" },
+  { id: "bhairavi",   name: "Bhairavi",        thaatOrigin: "Bhairavi", intervals: [0,1,3,5,7,8,10], swaras: ["Sa","Re♭","Ga♭","Ma","Pa","Dha♭","Ni♭"],   mood: "Pathos · Farewell",   universalTS: "" },
+  { id: "kafi",       name: "Kafi",            thaatOrigin: "Kafi",     intervals: [0,2,3,5,7,9,10], swaras: ["Sa","Re","Ga♭","Ma","Pa","Dha","Ni♭"],      mood: "Romantic · Spring",   universalTS: "" },
+  { id: "asavari",    name: "Asavari",         thaatOrigin: "Asavari",  intervals: [0,2,3,5,7,8,10], swaras: ["Sa","Re","Ga♭","Ma","Pa","Dha♭","Ni♭"],    mood: "Pathos · Morning",    universalTS: "" },
+  { id: "bilawal",    name: "Bilawal",         thaatOrigin: "Bilawal",  intervals: [0,2,4,5,7,9,11], swaras: ["Sa","Re","Ga","Ma","Pa","Dha","Ni"],         mood: "Joyful · Morning",    universalTS: "" },
+  { id: "khamaj",     name: "Khamaj",          thaatOrigin: "Khamaj",   intervals: [0,2,4,5,7,9,10], swaras: ["Sa","Re","Ga","Ma","Pa","Dha","Ni♭"],        mood: "Romantic · Night",    universalTS: "" },
+  { id: "todi",       name: "Todi",            thaatOrigin: "Todi",     intervals: [0,1,3,6,7,8,11], swaras: ["Sa","Re♭","Ga♭","Ma♯","Pa","Dha♭","Ni"],   mood: "Serious · Morning",   universalTS: "" },
+  { id: "purvi",      name: "Purvi",           thaatOrigin: "Purvi",    intervals: [0,1,4,6,7,8,11], swaras: ["Sa","Re♭","Ga","Ma♯","Pa","Dha♭","Ni"],     mood: "Solemn · Sunset",     universalTS: "" },
+  { id: "marwa",      name: "Marwa",           thaatOrigin: "Marwa",    intervals: [0,1,4,6,7,9,11], swaras: ["Sa","Re♭","Ga","Ma♯","Pa","Dha","Ni"],       mood: "Tense · Sunset",      universalTS: "" },
+  { id: "bhupali",    name: "Bhupali",         thaatOrigin: "Kalyan",   intervals: [0,2,4,7,9],      swaras: ["Sa","Re","Ga","Pa","Dha"],                   mood: "Joyful · Evening",    universalTS: "" },
+  { id: "darbari",    name: "Darbari Kanada",  thaatOrigin: "Asavari",  intervals: [0,2,3,5,7,8,10], swaras: ["Sa","Re","Ga♭","Ma","Pa","Dha♭","Ni♭"],    mood: "Serious · Night",     universalTS: "" },
+  { id: "bageshri",   name: "Bageshri",        thaatOrigin: "Kafi",     intervals: [0,2,3,5,7,8,10], swaras: ["Sa","Re","Ga♭","Ma","Pa","Dha♭","Ni♭"],    mood: "Longing · Night",     universalTS: "" },
+  { id: "des",        name: "Des",             thaatOrigin: "Khamaj",   intervals: [0,2,4,5,7,9,10], swaras: ["Sa","Re","Ga","Ma","Pa","Dha","Ni♭"],        mood: "Romantic · Night",    universalTS: "" },
+  { id: "kedar",      name: "Kedar",           thaatOrigin: "Kalyan",   intervals: [0,2,4,5,6,7,11], swaras: ["Sa","Re","Ga","Ma","Ma♯","Pa","Ni"],         mood: "Devotional · Evening", universalTS: "" },
+  { id: "hansdhwani", name: "Hansdhwani",      thaatOrigin: "Bilawal",  intervals: [0,2,4,7,11],     swaras: ["Sa","Re","Ga","Pa","Ni"],                    mood: "Joyful · Night",      universalTS: "" },
+];
+
+const TAALS = [
+  { id: "teentaal",   name: "Teentaal",        beats: 16, universalTS: "16/4",  divisions: [4,4,4,4],     bol: ["Dha","Dhin","Dhin","Dha","Dha","Dhin","Dhin","Dha","Dha","Tin","Tin","Ta","Ta","Dhin","Dhin","Dha"] },
+  { id: "rupak",      name: "Rupak",           beats: 7,  universalTS: "7/8",   divisions: [3,2,2],       bol: ["Tin","Tin","Na","Dhin","Na","Dhin","Na"] },
+  { id: "jhaptaal",   name: "Jhaptaal",        beats: 10, universalTS: "10/4",  divisions: [2,3,2,3],     bol: ["Dhi","Na","Dhi","Dhi","Na","Ti","Na","Dhi","Dhi","Na"] },
+  { id: "ektal",      name: "Ektal",           beats: 12, universalTS: "12/8",  divisions: [2,2,2,2,2,2], bol: ["Dhin","Dhin","Dhage","Trakt","Tu","Na","Kat","Ta","Dhage","Trakt","Dhin","Na"] },
+  { id: "keherwa",    name: "Keherwa",         beats: 8,  universalTS: "8/8",   divisions: [4,4],         bol: ["Dha","Ge","Na","Ti","Na","Ke","Dhi","Na"] },
+  { id: "dadra",      name: "Dadra",           beats: 6,  universalTS: "6/8",   divisions: [3,3],         bol: ["Dha","Dhi","Na","Dha","Ti","Na"] },
+  { id: "dhamar",     name: "Dhamar",          beats: 14, universalTS: "14/4",  divisions: [5,2,3,4],     bol: ["Ka","Dhi","Ta","Dhi","Ta","Dha","Ge","Ti","Ta","Ti","Ta","Ta","Dhi","Ta"] },
+  { id: "chachar",    name: "Chachar",         beats: 14, universalTS: "14/4",  divisions: [2,4,4,4],     bol: ["Dha","Dha","Tin","Tin","Ta","Dhin","Dhin","Dha","Dha","Tin","Tin","Ta","Ta","Dha"] },
+  { id: "chautaal",   name: "Chautaal",        beats: 12, universalTS: "12/4",  divisions: [2,2,2,2,2,2], bol: ["Dha","Dha","Dhin","Ta","Kit","Dha","Dhin","Ta","Tit","Kata","Gadi","Gana"] },
+  { id: "tilvada",    name: "Tilvada",         beats: 16, universalTS: "16/4",  divisions: [4,4,4,4],     bol: ["Dha","Dhin","Dhin","Dha","Dha","Dhin","Dhin","Dha","Dha","Tin","Tin","Ta","Tete","Dhin","Dhin","Dha"] },
+];
+
+const WESTERN_TS = ["2/4","3/4","4/4","5/4","6/8","7/8","9/8","11/8","12/8","3/8","5/8"];
+const MELODIC_INSTRUMENTS = ["Piano","Sitar","Flute","Violin","Guitar","Synth Pad","Synth Lead","Cello","Sarangi","Santoor","Harmonium","Veena","Saxophone","Oud"];
+const RHYTHM_INSTRUMENTS  = ["Tabla","Dhol","Mridangam","Dholak","Kick+Snare+Hat","Cajon","Congas","Drum Machine","Khol","Pakhawaj","Djembe"];
+const ROOTS = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+
+function getScaleNotes(rootIndex: number, intervals: number[]): string[] {
+  return intervals.map(i => NOTE_NAMES[(rootIndex + i) % 12]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+export default function GenerateInstrumentsPage() {
+  const router      = useRouter();
+  const searchParams = useSearchParams();
+  const fromDAW     = searchParams.get("from") === "daw";
+  const projectId   = searchParams.get("projectId") ?? "";
+
+  const [userPlan,   setUserPlan]   = useState<string>("free");
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [parallax,   setParallax]   = useState({ x: 0, y: 0 });
+
+  // Main state
+  const [type,       setType]       = useState<"rhythm"|"melody"|null>(null);
+  const [style,      setStyle]      = useState<"western"|"indian">("western");
+
+  // Rhythm state
+  const [selectedTaal,     setSelectedTaal]     = useState("");
+  const [selectedWesternTS,setSelectedWesternTS] = useState("4/4");
+  const [customTS,         setCustomTS]          = useState("");
+  const [tempo,            setTempo]             = useState(120);
+  const [rhythmElements,   setRhythmElements]    = useState<"bass"|"treble"|"all">("all");
+  const [rhythmInstrument, setRhythmInstrument]  = useState("Tabla");
+
+  // Melody state
+  const [selectedRoot,     setSelectedRoot]      = useState("C");
+  const [scaleFilter,      setScaleFilter]       = useState<"all"|"western"|"indian">("all");
+  const [scaleSearch,      setScaleSearch]       = useState("");
+  const [selectedScaleId,  setSelectedScaleId]   = useState("");
+  const [activeNotes,      setActiveNotes]       = useState<string[]>([]);
+  const [melodyInstrument, setMelodyInstrument]  = useState("Piano");
+  const [pianoType,        setPianoType]        = useState<"grand"|"rhodes"|"honkytonk"|"upright">("grand");
+  const [playingStyle,     setPlayingStyle]     = useState<"melody"|"chords"|"arpeggiated"|"two-hand">("melody");
+  const [octaveRange,      setOctaveRange]       = useState<[number,number]>([3,5]);
+  const [phraseLength,     setPhraseLength]      = useState(4);
+
+  // Output
+  const [outputFormat, setOutputFormat] = useState<"wav"|"midi"|"both">("wav");
+  const [generating,   setGenerating]   = useState(false);
+  const [generated,    setGenerated]    = useState(false);
+  const [wavBlob,       setWavBlob]       = useState<Blob | null>(null);
+  const [midiBlob,      setMidiBlob]      = useState<Blob | null>(null);
+  const [generateError, setGenerateError] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem("nokashi-theme");
@@ -54,351 +124,714 @@ export default function ProjectsPage() {
       setIsDarkMode(!document.documentElement.classList.contains("theme-light"));
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
+
+    const mm = (e: MouseEvent) => setParallax({ x: (e.clientX/window.innerWidth - 0.5) * -20, y: (e.clientY/window.innerHeight - 0.5) * -14 });
+    window.addEventListener("mousemove", mm);
+
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/login"); return; }
+      const { data: profile } = await supabase.from("profiles").select("plan,role").eq("id", user.id).single();
+      const isUnlimited = profile?.role === "admin" || profile?.role === "super_user";
+      setUserPlan(isUnlimited ? "studio" : profile?.plan ?? "free");
+    })();
+
+    return () => { observer.disconnect(); window.removeEventListener("mousemove", mm); };
   }, []);
 
+  const canMidi = userPlan === "pro" || userPlan === "studio";
+
+  // Derive selected scale object
+  const allScales = [...WESTERN_SCALES, ...INDIAN_RAGAS.map(r => ({ ...r, category: "indian", degrees: r.swaras }))];
+  const selectedScale = allScales.find(s => s.id === selectedScaleId);
+
+  // When scale or root changes — reset activeNotes to full scale
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const x = (e.clientX / window.innerWidth - 0.5) * -20;
-      const y = (e.clientY / window.innerHeight - 0.5) * -14;
-      setParallax({ x, y });
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
+    if (!selectedScale) { setActiveNotes([]); return; }
+    const rootIdx = ROOTS.indexOf(selectedRoot);
+    const notes   = getScaleNotes(rootIdx, selectedScale.intervals);
+    setActiveNotes(notes);
+  }, [selectedScaleId, selectedRoot]);
 
-  const textColor = isDarkMode ? "white" : "#1A1714";
-  const mutedColor = isDarkMode ? "#a1a1aa" : "#6B6560";
-  const card = CARDS[current];
+  const universalNotes = selectedScale
+    ? getScaleNotes(ROOTS.indexOf("C"), selectedScale.intervals)
+    : [];
+
+  const userKeyNotes = selectedScale
+    ? getScaleNotes(ROOTS.indexOf(selectedRoot), selectedScale.intervals)
+    : [];
+
+  const toggleNote = (note: string) => {
+    setActiveNotes(prev =>
+      prev.includes(note) ? prev.filter(n => n !== note) : [...prev, note]
+    );
+  };
+
+  const filteredScales = allScales.filter(s => {
+    if (scaleFilter !== "all" && s.category !== scaleFilter) return false;
+    if (scaleSearch && !s.name.toLowerCase().includes(scaleSearch.toLowerCase())) return false;
+    return true;
+  });
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setGenerated(false);
+    setGenerateError("");
+    setWavBlob(null);
+    setMidiBlob(null);
+
+    try {
+      if (type === "rhythm") {
+        const taalId        = style === "indian" ? selectedTaal : undefined;
+        const timeSignature = style === "western"
+          ? (selectedWesternTS === "Custom" ? customTS : selectedWesternTS)
+          : undefined;
+
+        if (style === "indian" && !taalId) {
+          setGenerateError("Please select a Taal before generating.");
+          setGenerating(false);
+          return;
+        }
+
+        const pattern = generateRhythmPattern({
+          style,
+          taalId,
+          timeSignature,
+          tempo,
+          elements: rhythmElements,
+          bars: 8,
+        });
+
+        if (pattern.length === 0) {
+          setGenerateError("Pattern generation failed — please check your settings.");
+          setGenerating(false);
+          return;
+        }
+
+        const wav = await synthRhythmToWav(pattern, tempo, rhythmInstrument);
+        setWavBlob(wav);
+
+        if (canMidi && (outputFormat === "midi" || outputFormat === "both")) {
+          const midi = rhythmToMidi(pattern, tempo, rhythmInstrument);
+          setMidiBlob(midi);
+        }
+
+      } else if (type === "melody") {
+        if (!selectedScaleId) {
+          setGenerateError("Please select a scale or raga before generating.");
+          setGenerating(false);
+          return;
+        }
+        if (activeNotes.length === 0) {
+          setGenerateError("Please select at least one note.");
+          setGenerating(false);
+          return;
+        }
+
+        const pattern = generateMelodyPattern({
+          style,
+          rootNote:     selectedRoot,
+          activeNotes,
+          scaleId:      selectedScaleId,
+          intervals:    selectedScale?.intervals ?? [],
+          phraseLength,
+          octaveRange,
+          instrument:   melodyInstrument,
+          playingStyle,
+          pianoType,
+        });
+
+        if (pattern.length === 0) {
+          setGenerateError("Melody generation failed — please check your settings.");
+          setGenerating(false);
+          return;
+        }
+
+        const wav = await synthMelodyToWav(pattern, 120, melodyInstrument);
+        setWavBlob(wav);
+
+        if (canMidi && (outputFormat === "midi" || outputFormat === "both")) {
+          const midi = melodyToMidi(pattern, 120, melodyInstrument);
+          setMidiBlob(midi);
+        }
+      }
+
+      setGenerated(true);
+
+    } catch (err: any) {
+      console.error("Generation failed:", err);
+      setGenerateError(err?.message ?? "Something went wrong. Please try again.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const downloadWav = () => {
+    if (!wavBlob) return;
+    const url = URL.createObjectURL(wavBlob);
+    const a   = document.createElement("a");
+    a.href    = url;
+    a.download = `${type}-${style}-${selectedScaleId || selectedTaal || "pattern"}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadMidi = () => {
+    if (!midiBlob) return;
+    const url = URL.createObjectURL(midiBlob);
+    const a   = document.createElement("a");
+    a.href    = url;
+    a.download = `${type}-${style}-${selectedScaleId || selectedTaal || "pattern"}.mid`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const inputBg = isDarkMode ? "#0A0A0A" : "rgba(255,255,255,0.6)";
+  const accentColor = "#A78BFA";
+
+  const SectionCard = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
+    <div className={`rounded-2xl border p-5 md:p-6 ${className}`} style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+      {children}
+    </div>
+  );
+
+  const Label = ({ children }: { children: React.ReactNode }) => (
+    <p className="text-xs uppercase tracking-wider mb-2 font-semibold" style={{ color: "var(--text-muted)" }}>{children}</p>
+  );
 
   return (
-    <div
-      className="min-h-screen relative overflow-hidden"
-      style={{ backgroundColor: "var(--background)", color: "var(--text)" }}
-    >
+    <div className="min-h-screen relative" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
       <AudioBackground parallax={parallax} lightMode={!isDarkMode} />
-
-      {/* Scribble SVG layer */}
-      <div
-        className="fixed inset-0 z-[1] pointer-events-none"
-        style={{
-          transform: `translate(${parallax.x * 1.8}px, ${parallax.y * 1.8}px)`,
-          transition: "transform 0.18s ease-out",
-          willChange: "transform",
-        }}
-      >
-        <svg width="100%" height="100%" viewBox="0 0 1440 900"
-          preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
-
-          {/* ── FLOWING LINES ── */}
-          <path d="M -40 480 C 80 460, 160 520, 240 480 C 320 440, 360 560, 460 520 C 560 480, 600 600, 720 580 C 840 560, 880 700, 980 660 C 1040 640, 1060 720, 1060 780 C 1060 840, 1100 880, 1160 880 C 1220 880, 1260 840, 1260 780 C 1260 740, 1240 720, 1200 700 C 1200 700, 1200 620, 1200 580 C 1200 540, 1260 520, 1320 500 C 1380 480, 1440 460, 1480 440"
-            fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M -40 180 C 100 160, 200 220, 320 180 C 440 140, 480 240, 600 200 C 720 160, 780 260, 900 220 C 980 200, 1020 160, 1100 140 C 1180 120, 1280 160, 1440 120"
-            fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M -40 720 C 120 700, 200 760, 340 720 C 480 680, 520 780, 660 740 C 800 700, 860 800, 1000 760 C 1080 740, 1120 800, 1200 820 C 1300 840, 1380 800, 1480 820"
-            fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
-
-          {/* ── HEADPHONES (bottom right) ── */}
-          <path d="M 1100 780 C 1100 700, 1160 660, 1220 660 C 1280 660, 1340 700, 1340 780"
-            fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"} strokeWidth="1.5" strokeLinecap="round" />
-          <circle cx="1100" cy="795" r="18" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"} strokeWidth="1.5" />
-          <circle cx="1340" cy="795" r="18" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"} strokeWidth="1.5" />
-
-          {/* ── GUITAR (top left) ── */}
-          <ellipse cx="120" cy="200" rx="38" ry="48" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          <ellipse cx="120" cy="260" rx="30" ry="36" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          <circle cx="120" cy="230" r="12" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          <line x1="120" y1="152" x2="120" y2="60" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" />
-          <path d="M 108 60 C 104 40, 108 30, 120 28 C 132 30, 136 40, 132 60" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" />
-          {[112,116,120,124,128,132].map((x,i) => <line key={i} x1={x} y1="60" x2={x} y2="290" stroke={isDarkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} strokeWidth="0.8" />)}
-
-          {/* ── PIANO KEYS (bottom left) ── */}
-          {[0,1,2,3,4,5,6].map(i => <rect key={i} x={40+i*28} y={780} width="24" height="80" rx="3" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />)}
-          {[0,1,3,4,5].map(i => <rect key={i} x={57+i*28} y={780} width="14" height="50" rx="2" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />)}
-
-          {/* ── MICROPHONE (top right) ── */}
-          <path d="M 1340 80 C 1340 40, 1400 40, 1400 80 L 1400 140 C 1400 180, 1340 180, 1340 140 Z" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          {[100,120,140].map((y,i) => <line key={i} x1="1340" y1={y} x2="1400" y2={y} stroke={isDarkMode ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)"} strokeWidth="1" />)}
-          <line x1="1370" y1="180" x2="1370" y2="240" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" />
-          <path d="M 1340 240 C 1340 260, 1400 260, 1400 240" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" />
-
-          {/* ── MUSICAL NOTE (center top) ── */}
-          <path d="M 700 80 L 700 130 M 700 80 L 730 72 L 730 122 M 700 130 C 700 140, 688 148, 688 140 C 688 132, 700 130, 700 130 M 730 122 C 730 132, 718 140, 718 132 C 718 124, 730 122, 730 122"
-            fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-
-          {/* ── WAVEFORM (center mid) ── */}
-          <path d="M 580 450 L 600 450 L 610 420 L 620 480 L 630 430 L 640 470 L 650 440 L 660 460 L 670 450 L 690 450"
-            fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-
-          {/* ── TABLA (right middle) ── */}
-          <ellipse cx="1100" cy="560" rx="28" ry="12" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          <path d="M 1072 560 L 1068 620 C 1068 636, 1128 636, 1128 620 L 1128 560" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" />
-          <ellipse cx="1020" cy="565" rx="36" ry="14" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          <path d="M 984 565 L 978 630 C 978 648, 1056 648, 1056 630 L 1056 565" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" />
-
-          {/* ── SITAR (left middle) ── */}
-          {/* Body — large gourd */}
-          <ellipse cx="220" cy="560" rx="45" ry="55" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          {/* Small gourd at top */}
-          <ellipse cx="220" cy="490" rx="22" ry="26" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          {/* Neck */}
-          <line x1="220" y1="464" x2="220" y2="360" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="2" strokeLinecap="round" />
-          {/* Headstock */}
-          <path d="M 208 360 C 204 340, 210 328, 220 326 C 230 328, 236 340, 232 360" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" />
-          {/* Frets */}
-          {[380,400,420,440].map((y,i) => <line key={i} x1="208" y1={y} x2="232" y2={y} stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1" />)}
-          {/* Strings */}
-          {[215,218,220,222,225].map((x,i) => <line key={i} x1={x} y1="360" x2={x} y2="600" stroke={isDarkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} strokeWidth="0.8" />)}
-
-          {/* ── HARMONIUM (bottom center) ── */}
-          {/* Body box */}
-          <rect x="560" y="800" width="200" height="70" rx="6" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          {/* Keys */}
-          {[0,1,2,3,4,5,6,7].map(i => <rect key={i} x={568+i*22} y={810} width="18" height="40" rx="2" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1" />)}
-          {/* Black keys */}
-          {[0,1,3,4,5].map(i => <rect key={i} x={578+i*22} y={810} width="10" height="26" rx="1" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1" />)}
-          {/* Bellows lines */}
-          {[0,1,2,3,4].map(i => <line key={i} x1="560" y1={815+i*10} x2="760" y2={815+i*10} stroke={isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"} strokeWidth="0.8" />)}
-
-          {/* ── VIOLIN / SARANGI (top center-left) ── */}
-          {/* Body */}
-          <path d="M 420 80 C 400 80, 388 96, 390 116 C 392 132, 404 136, 404 148 C 404 160, 390 164, 390 180 C 390 200, 404 216, 420 216 C 436 216, 450 200, 450 180 C 450 164, 436 160, 436 148 C 436 136, 448 132, 450 116 C 452 96, 440 80, 420 80 Z"
-            fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          {/* F holes */}
-          <path d="M 410 130 C 410 124, 414 120, 414 128" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1" strokeLinecap="round" />
-          <path d="M 430 130 C 430 124, 426 120, 426 128" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1" strokeLinecap="round" />
-          {/* Neck */}
-          <line x1="420" y1="80" x2="420" y2="36" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="2" strokeLinecap="round" />
-          {/* Scroll */}
-          <path d="M 414 36 C 410 28, 416 20, 424 22 C 430 24, 432 32, 426 36" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" />
-          {/* Bow */}
-          <path d="M 456 60 C 480 80, 480 180, 456 200" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1" strokeLinecap="round" />
-          <line x1="456" y1="60" x2="456" y2="200" stroke={isDarkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} strokeWidth="0.8" />
-
-          {/* ── BANSURI / FLUTE (top center-right) ── */}
-          <line x1="820" y1="40" x2="1060" y2="80" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="2" strokeLinecap="round" />
-          {/* Finger holes */}
-          {[0,1,2,3,4,5].map(i => <circle key={i} cx={860+i*32} cy={47+i*6} r="4" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.2" />)}
-          {/* Embouchure hole */}
-          <ellipse cx="836" cy="43" rx="6" ry="4" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.2" />
-
-          {/* ── DRUM KIT SNARE (right upper) ── */}
-          <ellipse cx="1260" cy="340" rx="50" ry="16" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          <path d="M 1210 340 L 1208 380 C 1208 392, 1312 392, 1312 380 L 1310 340" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" strokeLinecap="round" />
-          {/* Snare wires */}
-          {[0,1,2].map(i => <line key={i} x1={1228+i*16} y1="380" x2={1228+i*16} y2="392" stroke={isDarkMode ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)"} strokeWidth="0.8" />)}
-          {/* Drumsticks */}
-          <line x1="1230" y1="300" x2="1260" y2="340" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1.5" strokeLinecap="round" />
-          <line x1="1290" y1="300" x2="1260" y2="340" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1.5" strokeLinecap="round" />
-
-          {/* ── TANPURA (right lower) ── */}
-          {/* Large gourd body */}
-          <ellipse cx="1380" cy="620" rx="40" ry="50" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          {/* Small gourd */}
-          <ellipse cx="1380" cy="554" rx="20" ry="24" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          {/* Long neck */}
-          <line x1="1380" y1="530" x2="1380" y2="400" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="2" strokeLinecap="round" />
-          {/* Strings — 4 strings */}
-          {[1375,1378,1382,1385].map((x,i) => <line key={i} x1={x} y1="400" x2={x} y2="660" stroke={isDarkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} strokeWidth="0.8" />)}
-
-          {/* ── SPEAKER / MONITOR (left lower) ── */}
-          <rect x="40" y="680" width="80" height="80" rx="8" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          {/* Woofer */}
-          <circle cx="80" cy="720" r="24" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} strokeWidth="1.5" />
-          <circle cx="80" cy="720" r="14" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1" />
-          <circle cx="80" cy="720" r="6" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1" />
-          {/* Tweeter */}
-          <circle cx="80" cy="692" r="6" fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1" />
-
-          {/* ── EQUALIZER BARS (center lower) ── */}
-          {[0,1,2,3,4,5,6,7,8,9].map(i => {
-            const heights = [30,50,40,70,55,45,65,35,60,48];
-            return <rect key={i} x={640+i*18} y={760-heights[i]} width="12" height={heights[i]} rx="3" fill="none"
-              stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1" />;
-          })}
-
-          {/* ── DOUBLE BASS CLEF (far left center) ── */}
-          <path d="M 30 420 C 30 400, 50 390, 60 410 C 70 430, 50 450, 30 440 C 20 435, 20 445, 30 450 C 50 460, 70 450, 68 430"
-            fill="none" stroke={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} strokeWidth="1.5" strokeLinecap="round" />
-          <circle cx="72" cy="415" r="3" fill={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} />
-          <circle cx="72" cy="428" r="3" fill={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"} />
-
-        </svg>
-      </div>
-
       <div className="relative z-20">
-        <Navbar accentColor="#00B7FF" />
+        <Navbar accentColor={accentColor} />
       </div>
 
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-80px)] pb-16" style={{ marginTop: "-40px" }}>
+      <div className="relative z-10 max-w-4xl mx-auto px-4 md:px-8 py-10">
 
-        {/* Heading */}
-        <div
-          className="text-center mb-8 px-4"
-          style={{
-            transform: `translate(${parallax.x * 0.3}px, ${parallax.y * 0.3}px)`,
-            transition: "transform 0.2s ease-out",
-          }}
-        >
-          <h2 className="text-3xl font-bold mb-2" style={{ color: textColor }}>
-            Welcome Back
-          </h2>
-          <p className="text-sm" style={{ color: mutedColor }}>
-            Choose how you want to create today.
-          </p>
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            {fromDAW && (
+              <button onClick={() => router.back()} className="text-xs border px-3 py-1.5 rounded-lg transition"
+                style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>← DAW</button>
+            )}
+            <h1 className="text-3xl md:text-4xl font-bold" style={{ color: "var(--text)" }}>Generate Instrument</h1>
+          </div>
+          <p style={{ color: "var(--text-muted)" }}>Build a rhythm or melody pattern from scratch — Western or Indian classical.</p>
         </div>
 
-        {/* Swiper carousel */}
-        <div className="w-full relative">
-          <style>{`
-            .swiper-button-prev,
-            .swiper-button-next {
-              color: ${mutedColor};
-              background: ${isDarkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"};
-              border: 1px solid ${isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"};
-              width: 32px;
-              height: 32px;
-              border-radius: 50%;
-              top: 50%;
-              transform: translateY(-50%);
-            }
-            .swiper-button-prev {
-              left: 8px;
-            }
-            .swiper-button-next {
-              right: 8px;
-            }
-            .swiper-button-prev::after,
-            .swiper-button-next::after {
-              font-size: 11px;
-              font-weight: bold;
-            }
-            .swiper-button-disabled {
-              opacity: 0 !important;
-              pointer-events: none !important;
-            }
-            .swiper-pagination {
-              position: fixed !important;
-              bottom: 32px !important;
-              left: 50% !important;
-              transform: translateX(-50%) !important;
-              width: auto !important;
-            }
-            .swiper-pagination-bullet {
-              background: ${isDarkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)"};
-              opacity: 1;
-            }
-            .swiper-pagination-bullet-active {
-              background: ${CARDS[current].color};
-              width: 24px;
-              border-radius: 3px;
-            }
-          `}</style>
-
-          <Swiper
-            modules={[EffectCoverflow, Navigation, Pagination]}
-            effect="coverflow"
-            grabCursor={true}
-            centeredSlides={true}
-            slidesPerView="auto"
-            loop={false}
-            coverflowEffect={{
-              rotate: 0,
-              stretch: 0,
-              depth: 80,
-              modifier: 2.5,
-              slideShadows: false,
-            }}
-            navigation={true}
-            pagination={false}
-            speed={550}
-            onSlideChange={(swiper) => setCurrent(swiper.activeIndex)}
-            style={{ overflow: "visible" }}
-          >
-            {CARDS.map((c, i) => (
-              <SwiperSlide key={c.id} style={{ width: "min(420px, 75vw)" }}>
-                {({ isActive }: { isActive: boolean }) => (
-                  <div
-                    className="rounded-2xl p-8 cursor-pointer select-none"
-                    style={{
-                      height: 320,
-                      backgroundColor: isDarkMode
-                        ? "rgba(17,24,39,0.85)"
-                        : "rgba(234,228,216,0.90)",
-                      border: `1px solid ${isActive
-                        ? c.color + "60"
-                        : isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
-                      backdropFilter: "blur(12px)",
-                      boxShadow: isActive
-                        ? `0 0 40px ${c.color}20, 0 20px 60px rgba(0,0,0,0.3)`
-                        : "0 8px 32px rgba(0,0,0,0.15)",
-                      transition: "border 0.3s ease, box-shadow 0.3s ease",
-                    }}
-                    onClick={() => {
-                      if (isActive && c.href) router.push(c.href);
-                    }}
-                  >
-                    <div className="w-8 h-[2px] rounded-full mb-5"
-                      style={{ backgroundColor: c.color }} />
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-2"
-                      style={{ color: c.color }}>
-                      {c.subtitle}
-                    </p>
-                    <h3 className="text-2xl font-bold mb-4"
-                      style={{ color: isActive ? c.color : textColor }}>
-                      {c.title}
-                    </h3>
-                    <p className="text-sm leading-relaxed" style={{ color: mutedColor }}>
-                      {c.description}
-                    </p>
-                    {isActive && c.active && (
-                      <div className="mt-6">
-                        <span className="text-xs font-semibold px-3 py-1 rounded-full"
-                          style={{
-                            backgroundColor: c.color + "20",
-                            color: c.color,
-                            border: `1px solid ${c.color}40`,
-                          }}>
-                          Get Started →
-                        </span>
-                      </div>
-                    )}
-                    {isActive && !c.active && (
-                      <div className="mt-6">
-                        <span className="text-xs font-semibold px-3 py-1 rounded-full"
-                          style={{
-                            backgroundColor: "rgba(128,128,128,0.15)",
-                            color: mutedColor,
-                            border: "1px solid rgba(128,128,128,0.2)",
-                          }}>
-                          Coming Soon
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </SwiperSlide>
+        {/* Step 1 — Type */}
+        <SectionCard className="mb-5">
+          <Label>What do you want to create?</Label>
+          <div className="grid grid-cols-2 gap-3">
+            {(["rhythm","melody"] as const).map(t => (
+              <button key={t} onClick={() => { setType(t); setGenerated(false); }}
+                className="rounded-xl py-6 border text-center transition capitalize font-semibold text-lg"
+                style={{
+                  borderColor:     type === t ? accentColor : "var(--border)",
+                  backgroundColor: type === t ? accentColor + "15" : "transparent",
+                  color:           type === t ? accentColor : "var(--text-muted)",
+                }}>
+                {t === "rhythm" ? "🥁" : "🎵"} {t}
+              </button>
             ))}
-          </Swiper>
-        </div>
+          </div>
+        </SectionCard>
 
-        {/* Dots — fixed at bottom of screen */}
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 z-30">
-          {CARDS.map((_, i) => (
-            <div
-              key={i}
-              className="rounded-full transition-all duration-300"
-              style={{
-                width: i === current ? 24 : 6,
-                height: 6,
-                backgroundColor: i === current
-                  ? CARDS[current].color
-                  : isDarkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)",
-              }}
-            />
-          ))}
-        </div>
+        {type && (
+          <>
+            {/* Step 2 — Style */}
+            <SectionCard className="mb-5">
+              <Label>Style</Label>
+              <div className="grid grid-cols-2 gap-3">
+                {(["western","indian"] as const).map(s => (
+                  <button key={s} onClick={() => setStyle(s)}
+                    className="rounded-xl py-3 border text-center transition capitalize font-semibold"
+                    style={{
+                      borderColor:     style === s ? accentColor : "var(--border)",
+                      backgroundColor: style === s ? accentColor + "15" : "transparent",
+                      color:           style === s ? accentColor : "var(--text-muted)",
+                    }}>
+                    {s === "western" ? "🎸 Western" : "🪘 Indian Classical"}
+                  </button>
+                ))}
+              </div>
+            </SectionCard>
 
+            {/* ── RHYTHM PATH ── */}
+            {type === "rhythm" && (
+              <>
+                {/* Time signature / Taal */}
+                <SectionCard className="mb-5">
+                  {style === "indian" ? (
+                    <>
+                      <Label>Select Taal</Label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+                        {TAALS.map(t => (
+                          <button key={t.id} onClick={() => setSelectedTaal(t.id)}
+                            className="flex items-center justify-between px-4 py-3 rounded-xl border text-left transition"
+                            style={{
+                              borderColor:     selectedTaal === t.id ? accentColor : "var(--border)",
+                              backgroundColor: selectedTaal === t.id ? accentColor + "10" : "transparent",
+                            }}>
+                            <div>
+                              <p className="text-sm font-semibold" style={{ color: selectedTaal === t.id ? accentColor : "var(--text)" }}>{t.name}</p>
+                              <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{t.beats} beats · {t.divisions.join("+")} vibhags</p>
+                            </div>
+                            <span className="text-xs font-mono px-2 py-1 rounded border flex-shrink-0 ml-3"
+                              style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>{t.universalTS}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {selectedTaal && (() => {
+                        const t = TAALS.find(t => t.id === selectedTaal)!;
+                        return (
+                          <div className="rounded-xl p-4 border" style={{ backgroundColor: "var(--background)", borderColor: "var(--border)" }}>
+                            <p className="text-[11px] mb-2 font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Bol Pattern</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {t.bol.map((b, i) => {
+                                let vibhagStart = 0;
+                                let vibhagIdx = 0;
+                                for (let j = 0; j < t.divisions.length; j++) {
+                                  if (i < vibhagStart + t.divisions[j]) { vibhagIdx = j; break; }
+                                  vibhagStart += t.divisions[j];
+                                }
+                                const isSam = i === 0;
+                                return (
+                                  <span key={i} className="text-xs px-2 py-1 rounded border font-mono"
+                                    style={{
+                                      borderColor:     isSam ? accentColor : "var(--border)",
+                                      color:           isSam ? accentColor : "var(--text)",
+                                      backgroundColor: isSam ? accentColor + "15" : "transparent",
+                                    }}>
+                                    {b}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </>
+                  ) : (
+                    <>
+                      <Label>Time Signature</Label>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {WESTERN_TS.map(ts => (
+                          <button key={ts} onClick={() => setSelectedWesternTS(ts)}
+                            className="px-3 py-2 rounded-lg border text-sm font-mono transition"
+                            style={{
+                              borderColor:     selectedWesternTS === ts ? accentColor : "var(--border)",
+                              backgroundColor: selectedWesternTS === ts ? accentColor + "15" : "transparent",
+                              color:           selectedWesternTS === ts ? accentColor : "var(--text)",
+                            }}>
+                            {ts}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Label>Custom</Label>
+                        <input type="text" placeholder="e.g. 13/8" value={customTS}
+                          onChange={e => { setCustomTS(e.target.value); setSelectedWesternTS("Custom"); }}
+                          className="rounded-lg px-3 py-2 text-sm border focus:outline-none w-32"
+                          style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
+                          onFocus={e => (e.currentTarget.style.borderColor = accentColor)}
+                          onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}/>
+                      </div>
+                    </>
+                  )}
+                </SectionCard>
+
+                {/* Tempo */}
+                <SectionCard className="mb-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <Label>Tempo</Label>
+                    <span className="text-lg font-bold font-mono" style={{ color: accentColor }}>{tempo} BPM</span>
+                  </div>
+                  <input type="range" min={40} max={240} step={1} value={tempo}
+                    onChange={e => setTempo(+e.target.value)}
+                    className="w-full cursor-pointer"
+                    style={{ accentColor: accentColor }}/>
+                  <div className="flex justify-between mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    <span>40</span><span>Slow · 60</span><span>Medium · 120</span><span>Fast · 180</span><span>240</span>
+                  </div>
+                </SectionCard>
+
+                {/* Elements + Instrument */}
+                <SectionCard className="mb-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <Label>Elements</Label>
+                      <div className="flex flex-col gap-2">
+                        {(["bass","treble","all"] as const).map(el => (
+                          <button key={el} onClick={() => setRhythmElements(el)}
+                            className="px-4 py-2.5 rounded-xl border text-left text-sm capitalize transition"
+                            style={{
+                              borderColor:     rhythmElements === el ? accentColor : "var(--border)",
+                              backgroundColor: rhythmElements === el ? accentColor + "15" : "transparent",
+                              color:           rhythmElements === el ? accentColor : "var(--text)",
+                            }}>
+                            {el === "bass" ? "🔉 Bass elements" : el === "treble" ? "🔊 Treble elements" : "⚡ All elements"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Instrument</Label>
+                      <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                        {RHYTHM_INSTRUMENTS.map(inst => (
+                          <button key={inst} onClick={() => setRhythmInstrument(inst)}
+                            className="px-2 py-2 rounded-lg border text-xs text-left transition"
+                            style={{
+                              borderColor:     rhythmInstrument === inst ? accentColor : "var(--border)",
+                              backgroundColor: rhythmInstrument === inst ? accentColor + "15" : "transparent",
+                              color:           rhythmInstrument === inst ? accentColor : "var(--text-muted)",
+                            }}>
+                            {inst}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </SectionCard>
+              </>
+            )}
+
+            {/* ── MELODY PATH ── */}
+            {type === "melody" && (
+              <>
+                {/* Root key */}
+                <SectionCard className="mb-5">
+                  <Label>Root Key</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {ROOTS.map(r => (
+                      <button key={r} onClick={() => setSelectedRoot(r)}
+                        className="w-12 h-10 rounded-lg border text-sm font-semibold font-mono transition"
+                        style={{
+                          borderColor:     selectedRoot === r ? accentColor : "var(--border)",
+                          backgroundColor: selectedRoot === r ? accentColor + "15" : "transparent",
+                          color:           selectedRoot === r ? accentColor : "var(--text)",
+                        }}>
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </SectionCard>
+
+                {/* Scale browser */}
+                <SectionCard className="mb-5">
+                  <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                    <Label>Scale / Raga</Label>
+                    <div className="flex items-center gap-2">
+                      <input type="text" placeholder="Search..." value={scaleSearch} onChange={e => setScaleSearch(e.target.value)}
+                        className="rounded-lg px-3 py-1.5 text-xs border focus:outline-none w-32"
+                        style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
+                        onFocus={e => (e.currentTarget.style.borderColor = accentColor)}
+                        onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}/>
+                      {(["all","western","indian"] as const).map(f => (
+                        <button key={f} onClick={() => setScaleFilter(f)}
+                          className="px-2 py-1 rounded text-[10px] font-semibold capitalize border transition"
+                          style={{
+                            borderColor:     scaleFilter === f ? accentColor : "var(--border)",
+                            backgroundColor: scaleFilter === f ? accentColor + "15" : "transparent",
+                            color:           scaleFilter === f ? accentColor : "var(--text-muted)",
+                          }}>
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+                    {filteredScales.map(s => {
+                      const isRaga = s.category === "indian";
+                      const raga = isRaga ? INDIAN_RAGAS.find(r => r.id === s.id) : null;
+                      return (
+                        <button key={s.id} onClick={() => setSelectedScaleId(s.id)}
+                          className="flex items-start justify-between px-3 py-2.5 rounded-xl border text-left transition"
+                          style={{
+                            borderColor:     selectedScaleId === s.id ? accentColor : "var(--border)",
+                            backgroundColor: selectedScaleId === s.id ? accentColor + "10" : "transparent",
+                          }}>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold" style={{ color: selectedScaleId === s.id ? accentColor : "var(--text)" }}>{s.name}</p>
+                            {raga && <p className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>{raga.mood} · {raga.thaatOrigin} Thaat</p>}
+                          </div>
+                          <span className="text-[9px] uppercase px-1.5 py-0.5 rounded border flex-shrink-0 ml-2 mt-0.5"
+                            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+                            {isRaga ? "Raga" : "Scale"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Note display — universal + user key, always both rows */}
+                  {selectedScale && (
+                    <div className="mt-5 pt-5" style={{ borderTop: "1px solid var(--border)" }}>
+                      <p className="text-[11px] uppercase tracking-wide mb-3 font-semibold" style={{ color: "var(--text-muted)" }}>
+                        Notes — tap to deselect (deselected notes will not be used in generation)
+                      </p>
+
+                      {/* Universal row — always C# root */}
+                      <div className="mb-3">
+                        <p className="text-[10px] mb-1.5" style={{ color: "var(--text-muted)" }}>
+                          Universal (C root) — scale structure reference
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {universalNotes.map((note, i) => {
+                            const swara = selectedScale.category === "indian"
+                              ? (selectedScale as any).swaras?.[i] ?? ""
+                              : (selectedScale as any).degrees?.[i] ?? "";
+                            return (
+                              <div key={i} className="flex flex-col items-center gap-0.5">
+                                <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{swara}</span>
+                                <span className="text-xs px-2.5 py-1.5 rounded-lg border font-mono"
+                                  style={{ borderColor: "var(--border)", color: "var(--text)", backgroundColor: "var(--background)" }}>
+                                  {note}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* User key row — selectable/deselectable */}
+                      <div>
+                        <p className="text-[10px] mb-1.5" style={{ color: "var(--text-muted)" }}>
+                          Your key ({selectedRoot}) — click to toggle notes
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {userKeyNotes.map((note, i) => {
+                            const active = activeNotes.includes(note);
+                            const swara = selectedScale.category === "indian"
+                              ? (selectedScale as any).swaras?.[i] ?? ""
+                              : (selectedScale as any).degrees?.[i] ?? "";
+                            return (
+                              <div key={i} className="flex flex-col items-center gap-0.5">
+                                <span className="text-[9px]" style={{ color: active ? accentColor : "var(--text-muted)" }}>{swara}</span>
+                                <button onClick={() => toggleNote(note)}
+                                  className="text-xs px-2.5 py-1.5 rounded-lg border font-mono transition"
+                                  style={{
+                                    borderColor:     active ? accentColor : "var(--border)",
+                                    backgroundColor: active ? accentColor + "20" : "var(--background)",
+                                    color:           active ? accentColor : "var(--text-muted)",
+                                    opacity:         active ? 1 : 0.4,
+                                  }}>
+                                  {note}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {activeNotes.length === 0 && (
+                          <p className="text-xs mt-2" style={{ color: "#FF6B4A" }}>All notes deselected — select at least one note to generate.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </SectionCard>
+
+                {/* Instrument + settings */}
+                <SectionCard className="mb-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <Label>Instrument</Label>
+                      <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
+                        {MELODIC_INSTRUMENTS.map(inst => (
+                          <button key={inst} onClick={() => setMelodyInstrument(inst)}
+                            className="px-2 py-2 rounded-lg border text-xs text-left transition"
+                            style={{
+                              borderColor:     melodyInstrument === inst ? accentColor : "var(--border)",
+                              backgroundColor: melodyInstrument === inst ? accentColor + "15" : "transparent",
+                              color:           melodyInstrument === inst ? accentColor : "var(--text-muted)",
+                            }}>
+                            {inst}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Piano sub-type — only shown when Piano selected */}
+                      {melodyInstrument === "Piano" && (
+                        <div className="mt-4">
+                          <Label>Piano Type</Label>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {([
+                              { id: "grand",     label: "🎹 Grand" },
+                              { id: "rhodes",    label: "🎸 Rhodes" },
+                              { id: "honkytonk", label: "🎡 Honky Tonk" },
+                              { id: "upright",   label: "🪵 Upright" },
+                            ] as const).map(p => (
+                              <button key={p.id} onClick={() => setPianoType(p.id)}
+                                className="px-2 py-2 rounded-lg border text-xs text-left transition"
+                                style={{
+                                  borderColor:     pianoType === p.id ? accentColor : "var(--border)",
+                                  backgroundColor: pianoType === p.id ? accentColor + "15" : "transparent",
+                                  color:           pianoType === p.id ? accentColor : "var(--text-muted)",
+                                }}>
+                                {p.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Playing Style */}
+                      <div className="mt-4">
+                        <Label>Playing Style</Label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {([
+                            { id: "melody",      label: "Single Melody" },
+                            { id: "chords",      label: "Block Chords" },
+                            { id: "arpeggiated", label: "Arpeggiated" },
+                            { id: "two-hand",    label: "Two Hand" },
+                          ] as const).map(s => (
+                            <button key={s.id} onClick={() => setPlayingStyle(s.id)}
+                              className="px-2 py-2 rounded-lg border text-xs text-left transition"
+                              style={{
+                                borderColor:     playingStyle === s.id ? accentColor : "var(--border)",
+                                backgroundColor: playingStyle === s.id ? accentColor + "15" : "transparent",
+                                color:           playingStyle === s.id ? accentColor : "var(--text-muted)",
+                              }}>
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-5">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <Label>Phrase Length</Label>
+                          <span className="text-sm font-bold" style={{ color: accentColor }}>{phraseLength} bars</span>
+                        </div>
+                        <input type="range" min={1} max={16} step={1} value={phraseLength}
+                          onChange={e => setPhraseLength(+e.target.value)}
+                          className="w-full appearance-none cursor-pointer h-1.5 rounded-full"
+                          style={{ background: `linear-gradient(to right,${accentColor} 0%,${accentColor} ${((phraseLength-1)/15)*100}%,var(--border) ${((phraseLength-1)/15)*100}%,var(--border) 100%)` }}/>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <Label>Octave Range</Label>
+                          <span className="text-sm font-bold" style={{ color: accentColor }}>Oct {octaveRange[0]} – {octaveRange[1]}</span>
+                        </div>
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <p className="text-[10px] mb-1" style={{ color: "var(--text-muted)" }}>Low</p>
+                            <input type="range" min={1} max={6} step={1} value={octaveRange[0]}
+                              onChange={e => setOctaveRange([Math.min(+e.target.value, octaveRange[1]-1), octaveRange[1]])}
+                              className="w-full appearance-none cursor-pointer h-1.5 rounded-full"
+                              style={{ background: `linear-gradient(to right,${accentColor} 0%,${accentColor} ${((octaveRange[0]-1)/5)*100}%,var(--border) ${((octaveRange[0]-1)/5)*100}%,var(--border) 100%)` }}/>
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[10px] mb-1" style={{ color: "var(--text-muted)" }}>High</p>
+                            <input type="range" min={2} max={7} step={1} value={octaveRange[1]}
+                              onChange={e => setOctaveRange([octaveRange[0], Math.max(+e.target.value, octaveRange[0]+1)])}
+                              className="w-full appearance-none cursor-pointer h-1.5 rounded-full"
+                              style={{ background: `linear-gradient(to right,${accentColor} 0%,${accentColor} ${((octaveRange[1]-2)/5)*100}%,var(--border) ${((octaveRange[1]-2)/5)*100}%,var(--border) 100%)` }}/>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </SectionCard>
+              </>
+            )}
+
+            {/* Output format */}
+            <SectionCard className="mb-6">
+              <Label>Output Format</Label>
+              <div className="flex gap-3">
+                <button onClick={() => setOutputFormat("wav")}
+                  className="flex-1 py-3 rounded-xl border text-sm font-semibold transition"
+                  style={{
+                    borderColor:     outputFormat === "wav" ? accentColor : "var(--border)",
+                    backgroundColor: outputFormat === "wav" ? accentColor + "15" : "transparent",
+                    color:           outputFormat === "wav" ? accentColor : "var(--text-muted)",
+                  }}>
+                  WAV
+                </button>
+                <button onClick={() => canMidi ? setOutputFormat("midi") : null}
+                  className="flex-1 py-3 rounded-xl border text-sm font-semibold transition relative"
+                  style={{
+                    borderColor:     outputFormat === "midi" ? accentColor : !canMidi ? "var(--border)" : "var(--border)",
+                    backgroundColor: outputFormat === "midi" ? accentColor + "15" : "transparent",
+                    color:           !canMidi ? "var(--text-muted)" : outputFormat === "midi" ? accentColor : "var(--text-muted)",
+                    opacity:         !canMidi ? 0.5 : 1,
+                  }}>
+                  MIDI {!canMidi && <span className="text-[9px] ml-1">Pro+</span>}
+                </button>
+                <button onClick={() => canMidi ? setOutputFormat("both") : null}
+                  className="flex-1 py-3 rounded-xl border text-sm font-semibold transition"
+                  style={{
+                    borderColor:     outputFormat === "both" ? accentColor : "var(--border)",
+                    backgroundColor: outputFormat === "both" ? accentColor + "15" : "transparent",
+                    color:           !canMidi ? "var(--text-muted)" : outputFormat === "both" ? accentColor : "var(--text-muted)",
+                    opacity:         !canMidi ? 0.5 : 1,
+                  }}>
+                  Both {!canMidi && <span className="text-[9px] ml-1">Pro+</span>}
+                </button>
+              </div>
+            </SectionCard>
+
+            {/* Generate button */}
+            {generated ? (
+              <div className="rounded-2xl border p-6" style={{ backgroundColor: "var(--surface)", borderColor: "#14D8C440" }}>
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-2xl">✅</span>
+                  <div>
+                    <p className="font-semibold" style={{ color: "#14D8C4" }}>Pattern generated</p>
+                    <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                      {type === "rhythm" ? rhythmInstrument : melodyInstrument} ·{" "}
+                      {style === "indian" ? (selectedTaal || selectedScaleId) : selectedScaleId} ·{" "}
+                      {tempo} BPM
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3 mb-4">
+                  {wavBlob && (
+                    <button onClick={downloadWav}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm"
+                      style={{ backgroundColor: accentColor, color: "#000" }}>
+                      ⬇ Download WAV
+                    </button>
+                  )}
+                  {midiBlob && (
+                    <button onClick={downloadMidi}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm border"
+                      style={{ borderColor: accentColor, color: accentColor }}>
+                      ⬇ Download MIDI
+                    </button>
+                  )}
+                </div>
+                {generateError && <p className="text-sm mb-3" style={{ color: "#FF6B4A" }}>{generateError}</p>}
+                <button onClick={() => { setGenerated(false); setType(null); setWavBlob(null); setMidiBlob(null); }}
+                  className="px-5 py-2.5 rounded-lg border text-sm transition"
+                  style={{ borderColor: "var(--border)", color: "var(--text)" }}>
+                  Generate Another
+                </button>
+              </div>
+            ) : (
+              <>
+                {generateError && <p className="text-sm mb-3 px-1" style={{ color: "#FF6B4A" }}>{generateError}</p>}
+                <button
+                  onClick={handleGenerate}
+                  disabled={generating ||
+                    (type === "rhythm" && style === "indian" && !selectedTaal) ||
+                    (type === "melody" && !selectedScaleId) ||
+                    (type === "melody" && activeNotes.length === 0)}
+                  className="w-full py-4 rounded-2xl font-bold text-lg transition disabled:opacity-40"
+                  style={{ backgroundColor: accentColor, color: "#000" }}>
+                  {generating ? "Generating..." : `Generate ${type === "rhythm" ? "Rhythm" : "Melody"} Pattern`}
+                </button>
+              </>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

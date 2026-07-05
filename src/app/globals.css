@@ -77,3 +77,16 @@ font-family: var(--font-body);
 font-family: var(--font-body);
 font-weight: 700;
 }
+
+
+input[type='range'] {
+  -webkit-appearance: auto;
+  appearance: auto;
+  cursor: pointer;
+}
+
+.overflow-y-auto,
+.overflow-y-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}

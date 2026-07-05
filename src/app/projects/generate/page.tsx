@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Navbar from "@/components/Navbar";
 import AudioBackground from "@/components/AudioBackground";
+import { generateRhythmPattern, generateMelodyPattern } from "@/intelligence/generator/patternGenerator";
+import { synthMelodyToWav, synthRhythmToWav } from "@/intelligence/generator/wavSynthesis";
+import { melodyToMidi, rhythmToMidi } from "@/intelligence/generator/midiExport";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SCALE & TAAL DATA
@@ -72,6 +75,17 @@ function getScaleNotes(rootIndex: number, intervals: number[]): string[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Stable components — defined OUTSIDE main component to prevent remount on state change ──
+const SectionCard = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
+  <div className={`rounded-2xl border p-5 md:p-6 ${className}`} style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+    {children}
+  </div>
+);
+
+const Label = ({ children }: { children: React.ReactNode }) => (
+  <p className="text-xs uppercase tracking-wider mb-2 font-semibold" style={{ color: "var(--text-muted)" }}>{children}</p>
+);
+
 export default function GenerateInstrumentsPage() {
   const router      = useRouter();
   const searchParams = useSearchParams();
@@ -101,6 +115,8 @@ export default function GenerateInstrumentsPage() {
   const [selectedScaleId,  setSelectedScaleId]   = useState("");
   const [activeNotes,      setActiveNotes]       = useState<string[]>([]);
   const [melodyInstrument, setMelodyInstrument]  = useState("Piano");
+  const [pianoType,        setPianoType]        = useState<"grand"|"rhodes"|"honkytonk"|"upright">("grand");
+  const [playingStyle,     setPlayingStyle]     = useState<"melody"|"chords"|"arpeggiated"|"two-hand">("melody");
   const [octaveRange,      setOctaveRange]       = useState<[number,number]>([3,5]);
   const [phraseLength,     setPhraseLength]      = useState(4);
 
@@ -108,6 +124,9 @@ export default function GenerateInstrumentsPage() {
   const [outputFormat, setOutputFormat] = useState<"wav"|"midi"|"both">("wav");
   const [generating,   setGenerating]   = useState(false);
   const [generated,    setGenerated]    = useState(false);
+  const [wavBlob,       setWavBlob]       = useState<Blob | null>(null);
+  const [midiBlob,      setMidiBlob]      = useState<Blob | null>(null);
+  const [generateError, setGenerateError] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem("nokashi-theme");
@@ -167,24 +186,125 @@ export default function GenerateInstrumentsPage() {
 
   const handleGenerate = async () => {
     setGenerating(true);
-    // TODO: connect generation engine
-    await new Promise(r => setTimeout(r, 2000));
-    setGenerating(false);
-    setGenerated(true);
+    setGenerated(false);
+    setGenerateError("");
+    setWavBlob(null);
+    setMidiBlob(null);
+
+    try {
+      if (type === "rhythm") {
+        const taalId        = style === "indian" ? selectedTaal : undefined;
+        const timeSignature = style === "western"
+          ? (selectedWesternTS === "Custom" ? customTS : selectedWesternTS)
+          : undefined;
+
+        if (style === "indian" && !taalId) {
+          setGenerateError("Please select a Taal before generating.");
+          setGenerating(false);
+          return;
+        }
+
+        const pattern = generateRhythmPattern({
+          style,
+          taalId,
+          timeSignature,
+          tempo,
+          elements: rhythmElements,
+          bars: 8,
+        });
+
+        if (pattern.length === 0) {
+          setGenerateError("Pattern generation failed — please check your settings.");
+          setGenerating(false);
+          return;
+        }
+
+        const wav = await synthRhythmToWav(pattern, tempo, rhythmInstrument);
+        setWavBlob(wav);
+
+        if (canMidi && (outputFormat === "midi" || outputFormat === "both")) {
+          const midi = rhythmToMidi(pattern, tempo, rhythmInstrument);
+          setMidiBlob(midi);
+        }
+
+      } else if (type === "melody") {
+        if (!selectedScaleId) {
+          setGenerateError("Please select a scale or raga before generating.");
+          setGenerating(false);
+          return;
+        }
+        if (activeNotes.length === 0) {
+          setGenerateError("Please select at least one note.");
+          setGenerating(false);
+          return;
+        }
+
+        const pattern = generateMelodyPattern({
+          style,
+          rootNote:     selectedRoot,
+          activeNotes,
+          scaleId:      selectedScaleId,
+          intervals:    selectedScale?.intervals ?? [],
+          phraseLength,
+          octaveRange,
+          instrument:   melodyInstrument,
+          playingStyle,
+          pianoType,
+        });
+
+        if (pattern.length === 0) {
+          setGenerateError("Melody generation failed — please check your settings.");
+          setGenerating(false);
+          return;
+        }
+
+        const wav = await synthMelodyToWav(pattern, 120, melodyInstrument);
+        setWavBlob(wav);
+
+        if (canMidi && (outputFormat === "midi" || outputFormat === "both")) {
+          const midi = melodyToMidi(pattern, 120, melodyInstrument);
+          setMidiBlob(midi);
+        }
+      }
+
+      setGenerated(true);
+
+    } catch (err: any) {
+      console.error("Generation failed:", err);
+      setGenerateError(err?.message ?? "Something went wrong. Please try again.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const downloadWav = () => {
+    if (!wavBlob) return;
+    const url = URL.createObjectURL(wavBlob);
+    const a   = document.createElement("a");
+    a.href    = url;
+    a.download = `${type}-${style}-${selectedScaleId || selectedTaal || "pattern"}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadMidi = () => {
+    if (!midiBlob) return;
+    const url = URL.createObjectURL(midiBlob);
+    const a   = document.createElement("a");
+    a.href    = url;
+    a.download = `${type}-${style}-${selectedScaleId || selectedTaal || "pattern"}.mid`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const inputBg = isDarkMode ? "#0A0A0A" : "rgba(255,255,255,0.6)";
   const accentColor = "#A78BFA";
 
-  const SectionCard = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
-    <div className={`rounded-2xl border p-5 md:p-6 ${className}`} style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
-      {children}
-    </div>
-  );
-
-  const Label = ({ children }: { children: React.ReactNode }) => (
-    <p className="text-xs uppercase tracking-wider mb-2 font-semibold" style={{ color: "var(--text-muted)" }}>{children}</p>
-  );
+  // SectionCard and Label moved outside component to prevent remount on state change
 
   return (
     <div className="min-h-screen relative" style={{ backgroundColor: "var(--background)", color: "var(--text)" }}>
@@ -335,9 +455,10 @@ export default function GenerateInstrumentsPage() {
                     <Label>Tempo</Label>
                     <span className="text-lg font-bold font-mono" style={{ color: accentColor }}>{tempo} BPM</span>
                   </div>
-                  <input type="range" min={40} max={240} step={1} value={tempo} onChange={e => setTempo(+e.target.value)}
-                    className="w-full appearance-none cursor-pointer h-1.5 rounded-full"
-                    style={{ background: `linear-gradient(to right,${accentColor} 0%,${accentColor} ${((tempo-40)/200)*100}%,var(--border) ${((tempo-40)/200)*100}%,var(--border) 100%)` }}/>
+                  <input type="range" min={40} max={240} step={1} value={tempo}
+                    onChange={e => setTempo(+e.target.value)}
+                    className="w-full cursor-pointer"
+                    style={{ accentColor: accentColor }}/>
                   <div className="flex justify-between mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
                     <span>40</span><span>Slow · 60</span><span>Medium · 120</span><span>Fast · 180</span><span>240</span>
                   </div>
@@ -536,6 +657,54 @@ export default function GenerateInstrumentsPage() {
                           </button>
                         ))}
                       </div>
+
+                      {/* Piano sub-type — only shown when Piano selected */}
+                      {melodyInstrument === "Piano" && (
+                        <div className="mt-4">
+                          <Label>Piano Type</Label>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {([
+                              { id: "grand",     label: "🎹 Grand" },
+                              { id: "rhodes",    label: "🎸 Rhodes" },
+                              { id: "honkytonk", label: "🎡 Honky Tonk" },
+                              { id: "upright",   label: "🪵 Upright" },
+                            ] as const).map(p => (
+                              <button key={p.id} onClick={() => setPianoType(p.id)}
+                                className="px-2 py-2 rounded-lg border text-xs text-left transition"
+                                style={{
+                                  borderColor:     pianoType === p.id ? accentColor : "var(--border)",
+                                  backgroundColor: pianoType === p.id ? accentColor + "15" : "transparent",
+                                  color:           pianoType === p.id ? accentColor : "var(--text-muted)",
+                                }}>
+                                {p.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Playing Style */}
+                      <div className="mt-4">
+                        <Label>Playing Style</Label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {([
+                            { id: "melody",      label: "Single Melody" },
+                            { id: "chords",      label: "Block Chords" },
+                            { id: "arpeggiated", label: "Arpeggiated" },
+                            { id: "two-hand",    label: "Two Hand" },
+                          ] as const).map(s => (
+                            <button key={s.id} onClick={() => setPlayingStyle(s.id)}
+                              className="px-2 py-2 rounded-lg border text-xs text-left transition"
+                              style={{
+                                borderColor:     playingStyle === s.id ? accentColor : "var(--border)",
+                                backgroundColor: playingStyle === s.id ? accentColor + "15" : "transparent",
+                                color:           playingStyle === s.id ? accentColor : "var(--text-muted)",
+                              }}>
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                     <div className="space-y-5">
                       <div>
@@ -614,33 +783,55 @@ export default function GenerateInstrumentsPage() {
 
             {/* Generate button */}
             {generated ? (
-              <div className="rounded-2xl border p-6 text-center" style={{ backgroundColor: "var(--surface)", borderColor: "#14D8C440" }}>
-                <p className="text-2xl mb-2">✅</p>
-                <p className="font-semibold mb-1" style={{ color: "#14D8C4" }}>Pattern generated</p>
-                <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>Your {type} pattern is ready.</p>
-                <div className="flex gap-3 justify-center">
-                  <button className="px-5 py-2.5 rounded-lg font-semibold text-sm"
-                    style={{ backgroundColor: accentColor, color: "#000" }}>
-                    Download {outputFormat.toUpperCase()}
-                  </button>
-                  <button onClick={() => { setGenerated(false); setType(null); }}
-                    className="px-5 py-2.5 rounded-lg border text-sm transition"
-                    style={{ borderColor: "var(--border)", color: "var(--text)" }}>
-                    Generate Another
-                  </button>
+              <div className="rounded-2xl border p-6" style={{ backgroundColor: "var(--surface)", borderColor: "#14D8C440" }}>
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-2xl">✅</span>
+                  <div>
+                    <p className="font-semibold" style={{ color: "#14D8C4" }}>Pattern generated</p>
+                    <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                      {type === "rhythm" ? rhythmInstrument : melodyInstrument} ·{" "}
+                      {style === "indian" ? (selectedTaal || selectedScaleId) : selectedScaleId} ·{" "}
+                      {tempo} BPM
+                    </p>
+                  </div>
                 </div>
+                <div className="flex flex-wrap gap-3 mb-4">
+                  {wavBlob && (
+                    <button onClick={downloadWav}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm"
+                      style={{ backgroundColor: accentColor, color: "#000" }}>
+                      ⬇ Download WAV
+                    </button>
+                  )}
+                  {midiBlob && (
+                    <button onClick={downloadMidi}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm border"
+                      style={{ borderColor: accentColor, color: accentColor }}>
+                      ⬇ Download MIDI
+                    </button>
+                  )}
+                </div>
+                {generateError && <p className="text-sm mb-3" style={{ color: "#FF6B4A" }}>{generateError}</p>}
+                <button onClick={() => { setGenerated(false); setType(null); setWavBlob(null); setMidiBlob(null); }}
+                  className="px-5 py-2.5 rounded-lg border text-sm transition"
+                  style={{ borderColor: "var(--border)", color: "var(--text)" }}>
+                  Generate Another
+                </button>
               </div>
             ) : (
-              <button
-                onClick={handleGenerate}
-                disabled={generating ||
-                  (type === "rhythm" && style === "indian" && !selectedTaal) ||
-                  (type === "melody" && !selectedScaleId) ||
-                  (type === "melody" && activeNotes.length === 0)}
-                className="w-full py-4 rounded-2xl font-bold text-lg transition disabled:opacity-40"
-                style={{ backgroundColor: accentColor, color: "#000" }}>
-                {generating ? "Generating..." : `Generate ${type === "rhythm" ? "Rhythm" : "Melody"} Pattern`}
-              </button>
+              <>
+                {generateError && <p className="text-sm mb-3 px-1" style={{ color: "#FF6B4A" }}>{generateError}</p>}
+                <button
+                  onClick={handleGenerate}
+                  disabled={generating ||
+                    (type === "rhythm" && style === "indian" && !selectedTaal) ||
+                    (type === "melody" && !selectedScaleId) ||
+                    (type === "melody" && activeNotes.length === 0)}
+                  className="w-full py-4 rounded-2xl font-bold text-lg transition disabled:opacity-40"
+                  style={{ backgroundColor: accentColor, color: "#000" }}>
+                  {generating ? "Generating..." : `Generate ${type === "rhythm" ? "Rhythm" : "Melody"} Pattern`}
+                </button>
+              </>
             )}
           </>
         )}
