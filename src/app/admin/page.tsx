@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Navbar from "@/components/Navbar";
-import { Shield, Crown, User as UserIcon, Plus, Mail, X, Check } from "lucide-react";
+import { Shield, Crown, User as UserIcon, Plus, Mail, X, Check, Trash2 } from "lucide-react";
 
 interface Profile {
   id: string;
@@ -30,6 +30,8 @@ export default function AdminPage() {
   const [search, setSearch]         = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [toast, setToast]           = useState("");
+  const [userToDelete, setUserToDelete] = useState<Profile | null>(null);
+  const [deleting, setDeleting]         = useState(false);
   const [usageById, setUsageById]   = useState<Record<string, {
     storageUsedBytes: number; storageBudgetBytes: number;
     egressUsedBytes: number; egressBudgetBytes: number;
@@ -162,6 +164,23 @@ export default function AdminPage() {
     const data = await res.json();
     if (data.error) { showToast(data.error); return; }
     showToast(`Reset email sent to ${email} ✓`);
+  };
+
+  const handleRemoveUser = async () => {
+    if (!userToDelete) return;
+    setDeleting(true);
+    const headers = await getAuthHeader();
+    const res = await fetch("/api/admin/delete-user", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: userToDelete.id }),
+    });
+    const data = await res.json();
+    setDeleting(false);
+    if (data.error) { showToast(data.error); return; }
+    setUsers(prev => prev.filter(u => u.id !== userToDelete.id));
+    setUserToDelete(null);
+    showToast("User removed permanently ✓");
   };
 
   const filteredUsers = users.filter(u =>
@@ -304,14 +323,24 @@ export default function AdminPage() {
                       {new Date(u.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                     </td>
                     <td className="px-5 py-4 text-right">
-                      <button onClick={() => sendPasswordReset(u.email)}
-                        className="flex items-center gap-1.5 ml-auto text-xs px-3 py-1.5 rounded-lg border transition"
-                        style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-                        onMouseEnter={e => { e.currentTarget.style.color = "#00B7FF"; e.currentTarget.style.borderColor = "#00B7FF40"; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
-                        <Mail size={12} />
-                        Reset Password
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => sendPasswordReset(u.email)}
+                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition"
+                          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                          onMouseEnter={e => { e.currentTarget.style.color = "#00B7FF"; e.currentTarget.style.borderColor = "#00B7FF40"; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
+                          <Mail size={12} />
+                          Reset Password
+                        </button>
+                        <button onClick={() => setUserToDelete(u)}
+                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition"
+                          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                          onMouseEnter={e => { e.currentTarget.style.color = "#FF6B4A"; e.currentTarget.style.borderColor = "#FF6B4A40"; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}>
+                          <Trash2 size={12} />
+                          Remove
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -395,6 +424,37 @@ export default function AdminPage() {
                 className="flex-1 py-2.5 rounded-lg font-semibold text-sm disabled:opacity-50"
                 style={{ backgroundColor: "#00B7FF", color: "#000" }}>
                 {creating ? "Creating..." : "Create User"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove User Confirmation Modal */}
+      {userToDelete && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 px-4" style={{ backgroundColor: "rgba(0,0,0,0.7)" }}>
+          <div className="rounded-2xl p-6 w-full max-w-md border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: "#FF6B4A20" }}>
+                <Trash2 size={18} style={{ color: "#FF6B4A" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--text)" }}>Remove user permanently?</h3>
+            </div>
+            <p className="text-sm mb-2" style={{ color: "var(--text)" }}>
+              {userToDelete.full_name || userToDelete.email}
+            </p>
+            <p className="text-sm mb-6" style={{ color: "var(--text-muted)" }}>
+              This deletes their account, all projects, and all audio files. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setUserToDelete(null)} disabled={deleting}
+                className="flex-1 py-2.5 rounded-lg border text-sm transition"
+                style={{ borderColor: "var(--border)", color: "var(--text)" }}>Cancel</button>
+              <button onClick={handleRemoveUser} disabled={deleting}
+                className="flex-1 py-2.5 rounded-lg font-semibold text-sm disabled:opacity-50"
+                style={{ backgroundColor: "#FF6B4A", color: "#000" }}>
+                {deleting ? "Removing..." : "Remove Permanently"}
               </button>
             </div>
           </div>

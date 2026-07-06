@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Navbar from "@/components/Navbar";
 import AudioBackground from "@/components/AudioBackground";
-import { Shield, Crown, User as UserIcon, Music2, Mic2, Sparkles, HardDrive, Waves } from "lucide-react";
+import { Shield, Crown, User as UserIcon, Music2, Mic2, Sparkles, HardDrive, Waves, Trash2 } from "lucide-react";
 
 interface Profile {
   id: string;
@@ -81,6 +81,9 @@ export default function ProfilePage() {
   const [storageUsedBytes, setStorageUsedBytes]           = useState(0);
   const [egressUsedBytes, setEgressUsedBytes]             = useState(0);
   const [egressTrackingAvailable, setEgressTrackingAvailable] = useState(true);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [confirmText, setConfirmText]         = useState("");
+  const [deleting, setDeleting]               = useState(false);
 
   // Theme — identical pattern to every other migrated page (see projects/page.tsx)
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -161,6 +164,25 @@ export default function ProfilePage() {
       setProfile({ ...profile, full_name: nameInput.trim() || null });
       setEditingName(false);
     }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (confirmText !== "DELETE") return;
+    setDeleting(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/account/delete", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    });
+    const data = await res.json();
+    if (data.error) {
+      setDeleting(false);
+      alert(data.error);
+      return;
+    }
+    // Account is gone — clear the local session and leave
+    await supabase.auth.signOut();
+    window.location.href = "/";
   };
 
   const accentColor = "#00B7FF";
@@ -405,7 +427,68 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+
+        {/* Danger zone */}
+        <div className="backdrop-blur-sm rounded-2xl p-6 mt-6 border"
+          style={{ backgroundColor: isDarkMode ? "rgba(17,24,39,0.8)" : "rgba(234,228,216,0.85)", borderColor: "#FF6B4A40" }}>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h3 className="text-lg font-semibold mb-1" style={{ color: "#FF6B4A" }}>Danger Zone</h3>
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Permanently delete your account, all projects, and all audio files. This cannot be undone.
+              </p>
+            </div>
+            <button onClick={() => { setShowDeleteModal(true); setConfirmText(""); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-semibold transition"
+              style={{ borderColor: "#FF6B4A", color: "#FF6B4A" }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#FF6B4A"; e.currentTarget.style.color = "#000"; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#FF6B4A"; }}>
+              <Trash2 size={14} />
+              Delete Account
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Delete account modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 px-4" style={{ backgroundColor: "rgba(0,0,0,0.7)" }}>
+          <div className="rounded-2xl p-6 w-full max-w-md border" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: "#FF6B4A20" }}>
+                <Trash2 size={18} style={{ color: "#FF6B4A" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--text)" }}>Delete your account?</h3>
+            </div>
+            <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
+              This permanently deletes your account, {stats.total} project{stats.total === 1 ? "" : "s"}, and all
+              uploaded audio. There is no way to recover it.
+            </p>
+            <p className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>
+              Type <span className="font-bold" style={{ color: "#FF6B4A" }}>DELETE</span> to confirm:
+            </p>
+            <input
+              type="text" value={confirmText} onChange={e => setConfirmText(e.target.value)}
+              placeholder="DELETE"
+              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none border transition mb-5"
+              style={{ backgroundColor: inputBg, borderColor: "var(--border)", color: "var(--text)" }}
+              onFocus={e => (e.currentTarget.style.borderColor = "#FF6B4A")}
+              onBlur={e => (e.currentTarget.style.borderColor = "var(--border)")}
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeleteModal(false)} disabled={deleting}
+                className="flex-1 py-2.5 rounded-lg border text-sm transition"
+                style={{ borderColor: "var(--border)", color: "var(--text)" }}>Cancel</button>
+              <button onClick={handleDeleteAccount} disabled={deleting || confirmText !== "DELETE"}
+                className="flex-1 py-2.5 rounded-lg font-semibold text-sm disabled:opacity-40"
+                style={{ backgroundColor: "#FF6B4A", color: "#000" }}>
+                {deleting ? "Deleting..." : "Delete Forever"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
