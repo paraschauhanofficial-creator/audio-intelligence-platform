@@ -258,11 +258,11 @@ export default function GenerateInstrumentsPage() {
           return;
         }
 
-        const wav = await synthMelodyToWav(pattern, 120, melodyInstrument);
+        const wav = await synthMelodyToWav(pattern, tempo, melodyInstrument, pianoType);
         setWavBlob(wav);
 
         if (canMidi && (outputFormat === "midi" || outputFormat === "both")) {
-          const midi = melodyToMidi(pattern, 120, melodyInstrument);
+          const midi = melodyToMidi(pattern, tempo, melodyInstrument);
           setMidiBlob(midi);
         }
       }
@@ -507,6 +507,21 @@ export default function GenerateInstrumentsPage() {
             {/* ── MELODY PATH ── */}
             {type === "melody" && (
               <>
+                {/* Tempo */}
+                <SectionCard className="mb-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <Label>Tempo</Label>
+                    <span className="text-lg font-bold font-mono" style={{ color: accentColor }}>{tempo} BPM</span>
+                  </div>
+                  <input type="range" min={40} max={240} step={1} value={tempo}
+                    onChange={e => setTempo(+e.target.value)}
+                    className="w-full cursor-pointer"
+                    style={{ accentColor: accentColor }}/>
+                  <div className="flex justify-between mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    <span>40</span><span>Slow · 60</span><span>Medium · 120</span><span>Fast · 180</span><span>240</span>
+                  </div>
+                </SectionCard>
+
                 {/* Root key */}
                 <SectionCard className="mb-5">
                   <Label>Root Key</Label>

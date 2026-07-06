@@ -1,33 +1,29 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// PATTERN GENERATOR — V2
+// PATTERN GENERATOR — V2.1
 // Pure TypeScript — no audio, no DOM. Takes user inputs, produces structured
 // note/beat sequences that the synthesis and MIDI layers consume.
 //
-// What changed vs V1 (and why it sounds more musical):
-// - MOTIF STRUCTURE: western melodies use bar-level rhythm cells arranged in
-//   an A A B A' form, so phrases repeat and vary instead of random-walking.
-//   Indian melodies capture a pakad (signature phrase) and restate it.
-// - RHYTHM CELLS: note durations come from pre-built cells that sum to exactly
-//   one bar — melodies stay on the beat grid instead of drifting off it.
-// - IMPLIED HARMONY: western melodies follow a diatonic chord progression
-//   (I–V–vi–IV family); chord tones land on strong beats, passing tones on
-//   weak beats. Creates tension/resolution instead of aimless wandering.
-// - ABSOLUTE PITCH MATH: stepwise-motion and direction logic use real pitch
-//   (octave × 12 + interval), fixing the V1 bug where C4→C5 counted as
-//   "distance 0" and octave leaps were invisible to the weighting.
-// - PLAYING STYLES IMPLEMENTED: "chords" emits block chords via chordNotes,
-//   "arpeggiated" emits rolling eighth patterns over the progression,
-//   "two-hand" adds bassNote (left hand) on bar downbeats. V1 declared these
-//   fields but never populated them.
-// - THEKA FIDELITY: Indian rhythm always plays the full bol cycle — variation
-//   now comes from vibhag accents, a crescendo into Sam, and TiRaKiTa-style
-//   sixteenth fills before the cycle boundary, never from dropping theka bols.
-// - GROOVE TEMPLATES: western rhythm has real kick/snare/hat roles
-//   (bass/treble/mid), backbeat on 2 and 4, compound-meter feels, odd-meter
-//   groupings (5 = 3+2, 7 = 2+2+3), and a fill every fourth bar.
+// V2 (previous round): motif structure (A A B A'), rhythm cells (no beat
+// drift), implied harmony with cadences, octave-aware pitch math, playing
+// styles implemented, theka fidelity, western groove templates.
 //
-// Public API unchanged: all exported interfaces, types, and functions keep
-// identical signatures — wavSynthesis.ts and midiExport.ts need no edits.
+// V2.1 — "Grade 5–6" musicianship additions:
+// - VOICE LEADING: consecutive chords use the inversion nearest to the
+//   previous voicing, so voices move by step instead of jumping in parallel
+//   root positions (the #1 marker of a beginner). The bass/root identity of
+//   each chord is preserved separately for the left hand.
+// - ARTICULATION: notes carry legato / staccato / tenuto marks — fast runs
+//   slur, weak-beat short notes detach, phrase endings lean. The synthesis
+//   layer converts these to sounding-length via articulationGate().
+// - PEDAL LOGIC: notes carry a pedal flag. Pedal holds through a harmony,
+//   lifts at chord changes (last slot of each bar), stays down for arpeggios,
+//   and engages on long melodic landings — never on staccato.
+// - TWO-HAND COORDINATION: left hand now plays root on the downbeat and the
+//   fifth mid-bar (alternating bass), instead of one note per bar.
+//
+// Public API: all V1/V2 exports keep identical signatures. New additions are
+// strictly additive — two optional MelodyNote fields (articulation, pedal)
+// and one new exported helper (articulationGate) for the synthesis layer.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface RhythmEvent {
@@ -40,6 +36,8 @@ export interface RhythmEvent {
   isKhali?:  boolean;  // empty beat (softer, often muted)
 }
 
+export type Articulation = "legato" | "staccato" | "tenuto";
+
 export interface MelodyNote {
   note:       string;   // e.g. "C#" — for chords, this is the root note
   octave:     number;
@@ -50,9 +48,24 @@ export interface MelodyNote {
   isSamvadi?: boolean;  // is this the samvadi note
   isRest?:    boolean;  // silent beat
   // Chord/arpeggio support
-  chordNotes?:  { note: string; octave: number }[]; // all notes in chord
+  chordNotes?:  { note: string; octave: number }[]; // all notes in chord (voiced)
   playingStyle?: PlayingStyle;
   bassNote?:    { note: string; octave: number };   // two-hand left hand note
+  // V2.1 — performance marks (optional, additive)
+  articulation?: Articulation; // how the note is touched
+  pedal?:        boolean;      // sustain pedal held through this note
+}
+
+// Sounding-length multiplier for an articulation mark. The synthesis layer
+// applies this to the written duration before rendering:
+//   soundingDuration = writtenDuration * articulationGate(note.articulation)
+export function articulationGate(a?: Articulation): number {
+  switch (a) {
+    case "staccato": return 0.45;  // crisp, detached
+    case "tenuto":   return 0.98;  // full value, leaning
+    case "legato":   return 1.04;  // slight overlap into the next note
+    default:         return 0.88;  // ordinary detached touch
+  }
 }
 
 // ── Raga rules (inline — same data as raga_rules.ts) ──────────────────────
@@ -196,7 +209,7 @@ export function generateRhythmPattern(params: RhythmParams): RhythmEvent[] {
       // TiRaKiTa fill — sixteenths on the beat before the next Sam.
       // More likely on later cycles (the pattern "opens up" over time).
       const fillChance = 0.25 + (cycle / Math.max(params.bars - 1, 1)) * 0.35;
-      if (cycle < params.bars - 0 && Math.random() < fillChance && wants("treble")) {
+      if (Math.random() < fillChance && wants("treble")) {
         const fillBols = ["Ti", "Ra", "Ki", "Ta"];
         const fillBeat = cycle * taal.beats + taal.beats - 1;
         fillBols.forEach((fb, fi) => {
@@ -275,8 +288,8 @@ export function generateRhythmPattern(params: RhythmParams): RhythmEvent[] {
 
       // ── Hats — steady subdivision with alternating strong/weak ──
       if (wants("mid")) {
-        const step    = isCompound ? eighth : den === 8 ? eighth : eighth;
-        const hatEnd  = isFillBar ? beatsPerBar - 1 : beatsPerBar; // leave room for fill
+        const step   = eighth;
+        const hatEnd = isFillBar ? beatsPerBar - 1 : beatsPerBar; // leave room for fill
         for (let h = 0; h < hatEnd - 0.01; h += step) {
           if (Math.random() > 0.92) continue; // rare gap — breathing room
           const onBeat = Math.abs(h % 1) < 0.01;
@@ -325,6 +338,7 @@ export interface MelodyParams {
 }
 
 interface PoolNote { note: string; octave: number; interval: number; pitch: number }
+interface BarChord { voicing: PoolNote[]; root: PoolNote }
 
 // Rhythm cells — each sums to exactly 4 beats, so bars never drift off-grid.
 const CELLS_WESTERN: number[][] = [
@@ -337,16 +351,6 @@ const CELLS_WESTERN: number[][] = [
   [2, 1, 1],
   [1, 1, 2],
   [2, 0.5, 0.5, 1],
-];
-const CELLS_RAGA: number[][] = [
-  [2, 2],
-  [1, 1, 2],
-  [2, 1, 1],
-  [1, 2, 1],
-  [4],
-  [1, 1, 1, 1],
-  [3, 1],
-  [1.5, 0.5, 2],
 ];
 const CELLS_CADENCE: number[][] = [ [2, 2], [1, 1, 2], [1, 3] ];
 
@@ -379,8 +383,8 @@ function buildNotePool(params: MelodyParams, rules?: typeof RAGA_RULES[string]):
 }
 
 // Build a diatonic triad on a given scale degree by stacking scale thirds.
-// Works for any scale length ≥ 5 (pentatonics included). Returns pool notes
-// voiced ascending from a base octave, respecting user-deselected notes.
+// Works for any scale length ≥ 5 (pentatonics included). Returns root-position
+// tones voiced ascending from a base octave, respecting deselected notes.
 function buildTriad(degree: number, scale: number[], pool: PoolNote[], baseOctave: number): PoolNote[] {
   const len = scale.length;
   const tones: PoolNote[] = [];
@@ -388,14 +392,49 @@ function buildTriad(degree: number, scale: number[], pool: PoolNote[], baseOctav
     const degIdx   = (degree + stack * 2) % len;
     const wrapped  = Math.floor((degree + stack * 2) / len);
     const interval = scale[degIdx];
-    const targetPitch = (baseOctave + wrapped) * 12 + interval;
-    // Find the pool note at or nearest above this pitch (skips deselected notes)
     const found = pool.find(p => p.interval === interval && p.octave === baseOctave + wrapped)
                ?? pool.find(p => p.interval === interval);
     if (found && !tones.some(t => t.pitch === found.pitch)) tones.push(found);
-    void targetPitch;
   }
   return tones.sort((a, b) => a.pitch - b.pitch);
+}
+
+// VOICE LEADING — re-voice a chord so each voice moves minimally from the
+// previous voicing. This is what separates a trained pianist from a beginner:
+// C → F is played C-E-G → C-F-A (shared tone, steps), never a parallel jump
+// to F-A-C. The chord root identity is kept separately for the left hand.
+function nearestVoicing(rootPosition: PoolNote[], prev: PoolNote[] | null, pool: PoolNote[]): PoolNote[] {
+  if (!prev || prev.length === 0 || rootPosition.length < 2) return rootPosition;
+  const pcs = rootPosition.map(t => t.interval % 12);
+  const prevSorted = [...prev].sort((a, b) => a.pitch - b.pitch);
+  const cost = (v: PoolNote[]): number => {
+    const s = [...v].sort((a, b) => a.pitch - b.pitch);
+    let c = 0;
+    for (let i = 0; i < Math.min(s.length, prevSorted.length); i++) c += Math.abs(s[i].pitch - prevSorted[i].pitch);
+    return c;
+  };
+  let best  = rootPosition;
+  let bestC = cost(rootPosition);
+  // Try every inversion (rotation of the pitch-class set), closed-stacked
+  // upward from every available bass placement, and keep the cheapest.
+  for (let r = 0; r < pcs.length; r++) {
+    const order = pcs.slice(r).concat(pcs.slice(0, r));
+    for (const bass of pool.filter(p => p.interval % 12 === order[0])) {
+      const v: PoolNote[] = [bass];
+      let valid = true;
+      for (let k = 1; k < order.length; k++) {
+        const above = pool
+          .filter(p => p.interval % 12 === order[k] && p.pitch > v[k - 1].pitch)
+          .sort((a, b) => a.pitch - b.pitch)[0];
+        if (!above) { valid = false; break; }
+        v.push(above);
+      }
+      if (!valid) continue;
+      const c = cost(v);
+      if (c < bestC) { bestC = c; best = v; }
+    }
+  }
+  return [...best].sort((a, b) => a.pitch - b.pitch);
 }
 
 // Phrase arch — velocity and register rise to a peak ~62% through, then relax
@@ -414,7 +453,7 @@ export function generateMelodyPattern(params: MelodyParams): MelodyNote[] {
   return generateWesternMelody(params, pool, style);
 }
 
-// ── WESTERN — harmony-aware, motif-structured ────────────────────────────────
+// ── WESTERN — harmony-aware, motif-structured, voice-led ─────────────────────
 function generateWesternMelody(params: MelodyParams, pool: PoolNote[], style: PlayingStyle): MelodyNote[] {
   const notes: MelodyNote[] = [];
   const bars  = Math.max(1, params.phraseLength);
@@ -426,44 +465,57 @@ function generateWesternMelody(params: MelodyParams, pool: PoolNote[], style: Pl
   const lowOct    = params.octaveRange[0];
   const midOct    = Math.min(params.octaveRange[1], lowOct + 1);
 
-  // Chord per bar — progression loops; final bar resolves to the tonic
-  const chords: PoolNote[][] = [];
+  // Chord per bar — voice-led: each voicing is the inversion nearest the
+  // previous one; the root is tracked separately for bass/left-hand use.
+  const chords: BarChord[] = [];
+  let prevVoicing: PoolNote[] | null = null;
   for (let b = 0; b < bars; b++) {
     const degree = b === bars - 1 ? 0 : progRaw[b % progRaw.length];
-    const triad  = buildTriad(degree, scale, pool, midOct);
-    chords.push(triad.length >= 2 ? triad : buildTriad(0, scale, pool, midOct));
+    let rootPos  = buildTriad(degree, scale, pool, midOct);
+    if (rootPos.length < 2) rootPos = buildTriad(0, scale, pool, midOct);
+    const voicing = nearestVoicing(rootPos, prevVoicing, pool);
+    chords.push({ voicing, root: rootPos[0] });
+    prevVoicing = voicing;
   }
 
-  // ── Style: block chords ──
+  // ── Style: block chords — comping with voice leading and pedal ──
   if (style === "chords") {
     const compCells = [[2, 2], [1, 1, 2], [2, 1, 1], [1.5, 1.5, 1], [4]];
     const cellA = pick(compCells);
     for (let b = 0; b < bars; b++) {
-      const triad = chords[b];
-      const cell  = b % 4 === 2 ? pick(compCells) : cellA; // A A B A form
-      let slot = 0;
-      for (const dur of cell) {
-        const root = triad[0];
+      const { voicing, root } = chords[b];
+      const isLastBar = b === bars - 1;
+      const cell = isLastBar ? [4] : b % 4 === 2 ? pick(compCells) : cellA; // A A B A form
+      cell.forEach((dur, slot) => {
+        const lastSlot = slot === cell.length - 1;
+        // Pedal holds through the harmony, lifts on the bar's last slot so
+        // it clears before the next chord — except the final chord, which rings.
+        const pedal = isLastBar ? true : !lastSlot;
+        const artic: Articulation | undefined =
+          isLastBar ? "tenuto"
+          : slot > 0 && dur <= 1 && Math.random() < 0.35 ? "staccato"
+          : undefined;
         notes.push({
           note: root.note, octave: root.octave, duration: dur,
           velocity: clamp01((slot === 0 ? 0.82 : 0.62) + rand(-0.04, 0.04)),
-          chordNotes: triad.map(t => ({ note: t.note, octave: t.octave })),
+          chordNotes: voicing.map(t => ({ note: t.note, octave: t.octave })),
           playingStyle: "chords",
+          articulation: artic,
+          pedal: artic === "staccato" ? false : pedal,
         });
-        slot++;
-      }
+      });
     }
     return notes;
   }
 
-  // ── Style: arpeggiated ──
+  // ── Style: arpeggiated — voiced shapes, legato under one pedal per bar ──
   if (style === "arpeggiated") {
     for (let b = 0; b < bars; b++) {
-      const triad = chords[b];
-      // Arp figure: triad + octave-doubled root, up then down (8 eighths/bar)
-      const top   = pool.find(p => p.interval === triad[0].interval && p.octave === triad[0].octave + 1);
-      const shape = top ? [...triad, top] : [...triad, triad[0]];
-      const order = [0, 1, 2, 3, 2, 1, 0, 1].map(i => Math.min(i, shape.length - 1));
+      const { voicing } = chords[b];
+      const bottom = voicing[0];
+      const top    = pool.find(p => p.interval % 12 === bottom.interval % 12 && p.pitch === bottom.pitch + 12);
+      const shape  = top ? [...voicing, top] : [...voicing, voicing[voicing.length - 1]];
+      const order  = [0, 1, 2, 3, 2, 1, 0, 1].map(i => Math.min(i, shape.length - 1));
       order.forEach((idx, s) => {
         const n = shape[idx];
         const t = (b + s / 8) / bars;
@@ -472,6 +524,8 @@ function generateWesternMelody(params: MelodyParams, pool: PoolNote[], style: Pl
           velocity: clamp01(0.55 + arch(t) * 0.2 + (s === 0 ? 0.1 : 0) + rand(-0.03, 0.03)),
           playingStyle: "arpeggiated",
           chordNotes: s === 0 ? shape.map(x => ({ note: x.note, octave: x.octave })) : undefined,
+          articulation: "legato",
+          pedal: s !== 7, // lift on the last eighth so the next harmony is clean
         });
       });
     }
@@ -481,19 +535,20 @@ function generateWesternMelody(params: MelodyParams, pool: PoolNote[], style: Pl
   // ── Styles: single melody / two-hand — motif form A A B A' ──
   const cellA = pick(CELLS_WESTERN);
   const cellB = pick(CELLS_WESTERN.filter(c => c !== cellA));
-  let prevPitch = chords[0][0].pitch;
+  let prevPitch = chords[0].root.pitch;
 
-  // Melodic motif for the A bars: scale-degree offsets from each bar's chord,
-  // reused across A bars so the ear hears the idea return over new harmony.
+  // Melodic motif for the A bars: scale-degree offsets from each bar's chord
+  // root, reused across A bars so the ear hears the idea return over new harmony.
   const motifShape: number[] = [];
 
   for (let b = 0; b < bars; b++) {
     const isLast  = b === bars - 1;
     const barRole = isLast ? "cadence" : b % 4 === 2 ? "B" : "A";
     const cell    = barRole === "cadence" ? pick(CELLS_CADENCE) : barRole === "B" ? cellB : cellA;
-    const triad   = chords[b];
-    const chordPitches = new Set(triad.map(t => t.interval % 12));
+    const { voicing, root } = chords[b];
+    const chordPitches = new Set(voicing.map(t => t.interval % 12));
     let beatInBar = 0;
+    let fifthAttached = false;
 
     cell.forEach((dur, slot) => {
       const t = (b + beatInBar / 4) / bars;
@@ -521,7 +576,7 @@ function generateWesternMelody(params: MelodyParams, pool: PoolNote[], style: Pl
         }, pool[Math.floor(pool.length / 2)]);
       } else if (reuseMotif) {
         // Restate the motif: same offset from THIS bar's chord root
-        const target = triad[0].pitch + motifShape[slot];
+        const target = root.pitch + motifShape[slot];
         selected = pool.reduce((best, p) =>
           Math.abs(p.pitch - target) < Math.abs(best.pitch - target) ? p : best, pool[0]);
       } else {
@@ -545,19 +600,40 @@ function generateWesternMelody(params: MelodyParams, pool: PoolNote[], style: Pl
 
       // Record motif shape on the first A bar
       if (barRole === "A" && b < 4 && motifShape.length <= slot) {
-        motifShape.push(selected.pitch - triad[0].pitch);
+        motifShape.push(selected.pitch - root.pitch);
       }
+
+      // Articulation — the trained hand: runs slur, short weak notes detach,
+      // long notes and phrase endings lean into full value
+      const artic: Articulation | undefined =
+        (isLast && slot === cell.length - 1) ? "tenuto"
+        : dur <= 0.5 ? "legato"
+        : dur >= 1.5 ? "tenuto"
+        : (!strong && Math.random() < 0.22) ? "staccato"
+        : undefined;
+
+      // Pedal — engage on long notes and landings, never under staccato
+      const pedal = artic === "staccato" ? false : dur >= 1;
 
       const vel = clamp01(0.58 + arch(t) * 0.24 + (strong ? 0.06 : 0) + rand(-0.04, 0.04));
       const noteOut: MelodyNote = {
         note: selected.note, octave: selected.octave, duration: dur, velocity: vel,
+        articulation: artic, pedal,
       };
       if (style === "two-hand") {
         noteOut.playingStyle = "two-hand";
+        const bassOct = Math.max(1, root.octave - 2);
         if (slot === 0) {
-          // Left hand — chord root, below the melody register
-          const bassOct = Math.max(1, triad[0].octave - 2);
-          noteOut.bassNote = { note: triad[0].note, octave: bassOct };
+          // Left hand — chord root on the downbeat
+          noteOut.bassNote = { note: root.note, octave: bassOct };
+        } else if (!fifthAttached && beatInBar >= 2) {
+          // Left hand — the fifth mid-bar (alternating bass, like a real LH)
+          const fifthIv = (root.interval + 7) % 12;
+          const fifth = pool.find(p => p.interval % 12 === fifthIv);
+          if (fifth) {
+            noteOut.bassNote = { note: fifth.note, octave: bassOct };
+            fifthAttached = true;
+          }
         }
       }
       notes.push(noteOut);
@@ -598,21 +674,17 @@ function generateRagaMelody(
   let isAscending = true;
   let prev: PoolNote = pool.find(n => n.interval % 12 === 0 && n.octave === params.octaveRange[0]) ?? pool[0];
 
-  // Opening — start from Sa
-  pushRagaNote(prev, 1, 0.75);
-  currentBeat += 1;
-
-  // Pakad — the raga's signature phrase, captured early and restated later
-  const pakad: MelodyNote[] = [];
-  let pakadReplayed = false;
-
-  function pushRagaNote(n: PoolNote, dur: number, vel: number) {
+  function pushRagaNote(n: PoolNote, dur: number, vel: number, artic?: Articulation, pedal?: boolean) {
     const iv = n.interval % 12;
+    const isGamak = rules.gamakNotes.includes(iv);
     const out: MelodyNote = {
       note: n.note, octave: n.octave, duration: dur, velocity: clamp01(vel + rand(-0.03, 0.03)),
       isVadi:    iv === rules.vadi,
       isSamvadi: iv === rules.samvadi,
-      isGamak:   rules.gamakNotes.includes(iv),
+      isGamak,
+      // Gamak ornaments are inherently connected — always legato
+      articulation: artic ?? (isGamak ? "legato" : undefined),
+      pedal: pedal ?? dur >= 1.5, // sparse pedal — raga lines stay clear
     };
     if (style === "two-hand" && sa) {
       out.playingStyle = "two-hand";
@@ -624,6 +696,14 @@ function generateRagaMelody(
     }
     notes.push(out);
   }
+
+  // Opening — start from Sa
+  pushRagaNote(prev, 1, 0.75, "tenuto", true);
+  currentBeat += 1;
+
+  // Pakad — the raga's signature phrase, captured early and restated later
+  const pakad: MelodyNote[] = [];
+  let pakadReplayed = false;
 
   // Reserve the final beat — the closing Sa is non-negotiable in a raga
   const walkEnd = totalBeats - 1;
@@ -651,7 +731,7 @@ function generateRagaMelody(
         const target = restTargets.reduce((best, n) =>
           Math.abs(n.pitch - prev.pitch) < Math.abs(best.pitch - prev.pitch) ? n : best, restTargets[0]);
         const dur = Math.min(remaining, weighted([1, 1.5, 2], [0.3, 0.4, 0.3]));
-        pushRagaNote(target, dur, 0.80);
+        pushRagaNote(target, dur, 0.80, "tenuto", true); // landings lean and ring
         currentBeat += dur;
         prev = target;
         if (Math.random() > 0.5 && remaining > 1.5) {
@@ -690,7 +770,8 @@ function generateRagaMelody(
               : rules.gamakNotes.includes(iv) ? rand(0.55, 0.70)
               : rand(0.60, 0.80);
 
-    pushRagaNote(selected, duration, vel);
+    // Fast passing notes slur together; ordinary notes use the default touch
+    pushRagaNote(selected, duration, vel, duration <= 0.5 ? "legato" : undefined);
 
     // First few notes after the opening become the pakad
     if (pakad.length < 4 && currentBeat < 8) pakad.push({ ...notes[notes.length - 1] });
@@ -707,7 +788,7 @@ function generateRagaMelody(
 
   // Closing — return to Sa in the low register (always runs; ≥1 beat reserved)
   const finalSa = pool.find(n => n.interval % 12 === 0 && n.octave === params.octaveRange[0]) ?? pool[0];
-  pushRagaNote(finalSa, Math.max(totalBeats - currentBeat, 0.5), 0.85);
+  pushRagaNote(finalSa, Math.max(totalBeats - currentBeat, 0.5), 0.85, "tenuto", true);
 
   return notes;
 }

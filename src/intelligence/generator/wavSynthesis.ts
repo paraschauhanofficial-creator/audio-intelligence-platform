@@ -1,12 +1,29 @@
-import { renderGrandPiano, renderGrandPianoChord, renderGrandPianoArpeggio } from "./instruments/piano/grand";
+import { renderGrandPiano, renderGrandPianoChord } from "./instruments/piano/grand";
 // ─────────────────────────────────────────────────────────────────────────────
-// WAV SYNTHESIS ENGINE
+// WAV SYNTHESIS ENGINE — V2
 // OfflineAudioContext-based synthesis — no external dependencies.
 // Instrument-specific ADSR envelopes, waveforms, and timbres.
 // Gamak (ornament) notes get pitch oscillation to approximate andolan.
+//
+// V2 changes (wiring for patternGenerator V2.1 performance data):
+// - ARTICULATION: each note's sounding length = written duration ×
+//   articulationGate(note.articulation) — staccato detaches, legato overlaps.
+//   Written duration still advances the clock, so the grid never drifts.
+// - PEDAL: note.pedal now drives the grand piano's `sustained` argument
+//   instead of hardcoded values — pedal holds through harmonies and lifts
+//   at chord changes exactly as the generator decided.
+// - ARPEGGIO FIX: V2.1 arpeggios arrive as pre-voiced individual eighth
+//   notes; the old renderGrandPianoArpeggio call on top of them played every
+//   bar twice. Arpeggiated notes now render as the single notes they are.
+// - PIANO TYPE: synthMelodyToWav accepts an optional pianoType (default
+//   "grand"). Only the grand module exists today — rhodes / honkytonk /
+//   upright fall back to grand until their modules are built.
+// - LONGER PIANO TAIL: final pedal-held chords ring up to ~4s in grand.ts;
+//   the render buffer now leaves room instead of clipping the ring.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { RhythmEvent, MelodyNote } from "./patternGenerator";
+import { articulationGate } from "./patternGenerator";
+import type { RhythmEvent, MelodyNote, PianoType } from "./patternGenerator";
 
 const NOTE_FREQ: Record<string, number> = {
   "C":261.63,"C#":277.18,"D":293.66,"D#":311.13,"E":329.63,
@@ -351,18 +368,29 @@ function audioBufferToWav(buffer: AudioBuffer): Blob {
 // PUBLIC API
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function synthMelodyToWav(notes: MelodyNote[], tempo: number, instrument: string): Promise<Blob> {
+export async function synthMelodyToWav(
+  notes: MelodyNote[],
+  tempo: number,
+  instrument: string,
+  pianoType: PianoType = "grand",
+): Promise<Blob> {
   const profile   = INSTRUMENT_PROFILES[instrument] ?? INSTRUMENT_PROFILES["Piano"];
   const secPerBeat = 60 / tempo;
-  const totalSecs  = notes.reduce((sum, n) => sum + n.duration * secPerBeat, 0) + 1.5; // +1.5s tail
+
+  // Route Piano instruments to dedicated synthesis modules.
+  // NOTE: only the grand module exists today — "rhodes", "honkytonk", and
+  // "upright" fall back to grand until their modules are built.
+  const isPiano = ["Piano","Grand Piano"].includes(instrument);
+  void pianoType;
+
+  // Pedal-held final chords ring up to ~4s in grand.ts — leave buffer room
+  const tailSecs  = isPiano ? 3.5 : 1.5;
+  const totalSecs = notes.reduce((sum, n) => sum + n.duration * secPerBeat, 0) + tailSecs;
 
   const OAC = (typeof window !== "undefined" && (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)) as typeof OfflineAudioContext;
   const ctx = new OAC(2, Math.ceil(totalSecs * 44100), 44100);
 
   let currentTime = 0.1; // tiny offset to avoid t=0 artifacts
-
-  // Route Piano instruments to dedicated synthesis modules
-  const isPiano = ["Piano","Grand Piano"].includes(instrument);
 
   for (const note of notes) {
     const durSecs = note.duration * secPerBeat;
@@ -371,21 +399,30 @@ export async function synthMelodyToWav(notes: MelodyNote[], tempo: number, instr
       continue;
     }
 
+    // Articulation shapes the SOUNDING length; the written duration still
+    // advances the clock, so staccato detaches without breaking the grid.
+    const soundSecs = durSecs * articulationGate(note.articulation);
+
     if (isPiano) {
       const style = note.playingStyle ?? "melody";
+      // Pedal comes from the generator's decision; defaults preserve the
+      // old behaviour for patterns generated before pedal data existed.
+      const pedal = note.pedal ?? (style === "chords" || style === "arpeggiated");
+
       if (style === "chords" && note.chordNotes && note.chordNotes.length > 0) {
-        renderGrandPianoChord(ctx, note.chordNotes, currentTime, durSecs, note.velocity, true);
-      } else if (style === "arpeggiated" && note.chordNotes && note.chordNotes.length > 0) {
-        renderGrandPianoArpeggio(ctx, note.chordNotes, currentTime, durSecs, 0.06, note.velocity, true);
+        renderGrandPianoChord(ctx, note.chordNotes, currentTime, soundSecs, note.velocity, pedal);
       } else {
-        // melody or two-hand
-        renderGrandPiano(ctx, note.note, note.octave, currentTime, durSecs, note.velocity, false);
+        // melody, two-hand, AND arpeggiated all render as single notes.
+        // V2.1 arpeggios arrive as pre-voiced individual eighth notes —
+        // rolling chordNotes again here would play every bar twice.
+        renderGrandPiano(ctx, note.note, note.octave, currentTime, soundSecs, note.velocity, pedal);
         if (style === "two-hand" && note.bassNote) {
-          renderGrandPiano(ctx, note.bassNote.note, note.bassNote.octave, currentTime, durSecs, note.velocity * 0.7, false);
+          // Left hand — full written length (LH lets notes ring under the RH)
+          renderGrandPiano(ctx, note.bassNote.note, note.bassNote.octave, currentTime, Math.max(soundSecs, durSecs), note.velocity * 0.7, pedal);
         }
       }
     } else {
-      renderMelodicNote(ctx, note.note, note.octave, currentTime, durSecs, note.velocity, profile, note.isGamak ?? false);
+      renderMelodicNote(ctx, note.note, note.octave, currentTime, soundSecs, note.velocity, profile, note.isGamak ?? false);
     }
 
     currentTime += durSecs;

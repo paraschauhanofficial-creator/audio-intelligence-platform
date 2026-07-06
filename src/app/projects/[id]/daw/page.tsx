@@ -1122,7 +1122,7 @@ export default function DAWPage() {
         {/* ── Mobile tab bar ── */}
         <div className="flex md:hidden gap-1 mb-3 flex-shrink-0">
           {(["timeline","mixer","tracks","inspector"] as const).map(tab => (
-            <button key={tab} onClick={() => setMobileTab(tab)}
+            <button key={tab} onClick={() => { setMobileTab(tab); setExpandedView("none"); }}
               className="flex-1 py-2 rounded-lg text-xs font-semibold capitalize border transition"
               style={{
                 backgroundColor: mobileTab === tab ? trackColor + "20" : "transparent",
@@ -1138,7 +1138,7 @@ export default function DAWPage() {
         <div className="flex-1 min-h-0 overflow-hidden md:grid md:grid-cols-[160px_1fr_220px_80px_60px] md:gap-4 flex flex-col">
 
           {/* Tracks list */}
-          <div className={`rounded-2xl p-4 overflow-y-auto min-h-0 flex-col border ${mobileTab === "tracks" ? "flex" : "hidden md:flex"}`} style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
+          <div className={`rounded-2xl p-4 overflow-y-auto min-h-0 flex-col border flex-1 ${mobileTab === "tracks" ? "flex" : "hidden md:flex"}`} style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}>
             <h3 className="text-xs font-semibold mb-4 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Tracks</h3>
             <div className="space-y-2 flex-1">
               {tracks.map((track, i) => {
@@ -1169,11 +1169,10 @@ export default function DAWPage() {
           </div>
 
           {/* Timeline + Mixer */}
-          <div className={`flex-col gap-0 overflow-hidden h-full ${mobileTab === "timeline" || mobileTab === "mixer" ? "flex" : "hidden md:flex"}`}
-            style={{ display: "flex" }}>
+          <div className={`flex-col gap-0 overflow-hidden h-full flex-1 min-h-0 md:flex-none ${mobileTab === "timeline" || mobileTab === "mixer" ? "flex" : "hidden md:flex"}`}>
 
             {/* Timeline */}
-            <div className="rounded-2xl flex flex-col min-h-0 border overflow-hidden"
+            <div className={`rounded-2xl flex-col min-h-0 border overflow-hidden ${mobileTab === "mixer" ? "hidden md:flex" : "flex"}`}
               style={{
                 backgroundColor: "var(--surface)",
                 borderColor: "var(--border)",
@@ -1261,7 +1260,7 @@ export default function DAWPage() {
             </div>
 
             {/* ── MIXER ── */}
-            <div className="rounded-2xl flex flex-col min-h-0 border overflow-hidden"
+            <div className={`rounded-2xl flex-col min-h-0 border overflow-hidden ${mobileTab === "timeline" ? "hidden md:flex" : "flex"}`}
               style={{
                 backgroundColor: "var(--surface)",
                 borderColor: "var(--border)",
@@ -1374,7 +1373,7 @@ export default function DAWPage() {
           </div>
 
           {/* Inspector */}
-          <div className={`rounded-2xl overflow-hidden min-h-0 flex-col border ${mobileTab === "inspector" ? "flex" : "hidden md:flex"}`} style={{ backgroundColor: "var(--surface)", borderColor: inspectorAccent + "40" }}>
+          <div className={`rounded-2xl overflow-hidden min-h-0 flex-col border flex-1 md:flex-none ${mobileTab === "inspector" ? "flex" : "hidden md:flex"}`} style={{ backgroundColor: "var(--surface)", borderColor: inspectorAccent + "40" }}>
             <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: `1px solid ${inspectorAccent}30` }}>
               <span className="text-xs font-bold uppercase tracking-wider" style={{ color: inspectorAccent }}>
                 {inspectorContext === "master" ? "⬡ Master Chain" : selectedTrack}
@@ -1487,8 +1486,11 @@ export default function DAWPage() {
             )}
           </div>
 
+          {/* Strips wrapper — side-by-side on mobile, invisible (md:contents) on desktop so grid is untouched */}
+          <div className={`gap-2 flex-shrink-0 md:contents ${mobileTab === "inspector" ? "flex" : "hidden md:contents"}`} style={{ height: 260 }}>
+
           {/* Channel Strip */}
-          <div className={`rounded-2xl p-3 overflow-hidden min-h-0 flex-col border ${mobileTab === "inspector" ? "flex" : "hidden md:flex"}`}
+          <div className={`rounded-2xl p-3 overflow-hidden min-h-0 flex-col border flex-1 md:flex-none ${mobileTab === "inspector" ? "flex" : "hidden md:flex"}`}
             style={{ backgroundColor: "var(--surface)", borderColor: inspectorContext === "track" ? inspectorAccent + "40" : "var(--border)" }}>
             <h3 className="text-center text-[11px] font-semibold mb-1" style={{ color: inspectorAccent }}>
               {inspectorContext === "track" ? selectedTrack?.slice(0, 8) || "Track" : "Track"}
@@ -1583,6 +1585,9 @@ export default function DAWPage() {
               </div>
             </div>
           </div>
+
+          </div>
+          {/* end strips wrapper */}
 
         </div>
       </div>
