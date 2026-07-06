@@ -1,14 +1,36 @@
 /**
  * Aura Mixer — src/intelligence/mixer/index.ts
- * V2 — Comprehensive industry-standard mixing engine
+ * V3 — Bug fixes + industry-standard summing, loudness & width handling
  *
- * Built from research into:
- * - Western mixing standards (pan placement, gain staging, HPF, EQ)
- * - Indian classical/devotional standards (tabla, harmonium, tanpura, sitar)
- * - Streaming loudness targets (Spotify -14 LUFS, Apple Music -16 LUFS)
- * - Genre-specific level relationships (drums anchor, vocals loudest, bass center)
+ * Changes from V2:
+ *   [FIX] Double-mirror pan bug — explicitly-mapped even-index slots (guitar_2,
+ *         backing_2, synth_2 …) no longer get flipped to the wrong side.
+ *   [FIX] Render length computed in SECONDS, not frames — mixed-sample-rate
+ *         stems (48k uploads into a 44.1k context) no longer truncate/pad.
+ *   [FIX] mix_role checked explicitly — unset/unknown roles are neutral,
+ *         they no longer silently receive the -1dB "supporting" penalty.
+ *   [FIX] Dead LPF routing branch removed.
+ *   [FIX] HPF is now a single 12dB/oct Butterworth (V2 accidentally built a
+ *         24dB/oct Linkwitz-Riley that bit ~-6dB at the stated cutoff).
+ *   [NEW] Per-section summing compensation — N stems matched individually to
+ *         a section target sum ~10·log10(N) dB louder than intended. Without
+ *         this, 5 instrument stems overpower the lead vocal.
+ *   [NEW] true_peak ceiling — LUFS matching can no longer push an already-hot
+ *         stem into inter-sample clipping (which previously forced the whole
+ *         mix down during normalization).
+ *   [NEW] Final loudness trim — rendered mix is measured (gated-RMS
+ *         approximation of integrated loudness) and trimmed toward -20 LUFS
+ *         so auraMaster receives a consistent pre-master level every time.
+ *   [NEW] Stereo width is now actually implemented — M/S widener for stereo
+ *         bed elements (tanpura, pads, choir…), light Haas spread for mono
+ *         bed sources. V2 only promised this in comments.
+ *   [NEW] Wide stereo stems (stereo_width > 60) bypass StereoPanner to avoid
+ *         collapsing their image (StereoPanner attenuates one channel).
+ *   [NEW] "Supporting" duplicates of the same instrument get pushed wider
+ *         (pan ×1.3) and a slightly higher HPF (×1.2) so they separate from
+ *         the "main" instance instead of just being quieter.
  *
- * Pipeline position:
+ * Pipeline position (unchanged):
  *   analyzeStem() per stem
  *       ↓
  *   runAutoMix() — decode AudioBuffers
@@ -17,7 +39,7 @@
  *       ↓
  *   auraMaster()
  *
- * Nothing outside this file is touched. Drop-in replacement — same signature.
+ * Drop-in replacement — same exported signature.
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,96 +50,89 @@ export interface MixerStemRecord {
   section:         string;       // "drums"|"instruments"|"vocals"|"other"
   slot:            string;       // e.g. "kick","lead_vocal","tabla","harmonium"
   slot_index:      number;       // 1 = first instance, 2 = second, etc.
-  mix_role:        string;       // "main" | "supporting" — set by user on identification page
+  mix_role:        string;       // "main" | "supporting" | "" — set by user
   integrated_lufs: number | null;
-  true_peak:       number | null;
-  freq_sub:        number | null;   // dB at ~40Hz
-  freq_bass:       number | null;   // dB at ~130Hz
-  freq_low_mid:    number | null;   // dB at ~350Hz
-  freq_mid:        number | null;   // dB at ~1kHz
-  freq_high_mid:   number | null;   // dB at ~4kHz
-  freq_air:        number | null;   // dB at ~13kHz
-  stereo_width:    number | null;   // 0–100%
+  true_peak:       number | null; // dBTP from analysis
+  freq_sub:        number | null;
+  freq_bass:       number | null;
+  freq_low_mid:    number | null;
+  freq_mid:        number | null;
+  freq_high_mid:   number | null;
+  freq_air:        number | null;
+  stereo_width:    number | null; // 0–100%
   musical_key:     string | null;
   scale:           string | null;
 }
 
-interface ProcessedStem {
-  buffer:       AudioBuffer;
-  stem:         MixerStemRecord;
-  gainDb:       number;
-  pan:          number;
-  hpfHz:        number;
-  lpfHz:        number | null;
-  sectionLabel: string;
+/** Per-render context computed once from the full stem list. */
+interface MixContext {
+  /** How many stems share each section — used for summing compensation. */
+  sectionCounts:   Record<string, number>;
+  /** Slot bases that appear more than once (guitar, backing, tabla …). */
+  duplicatedBases: Set<string>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION TARGET LUFS
-// Research-backed relative levels before summing.
-// Industry standard: lead vocal sits loudest, kick/bass anchor, drums energy.
-// Indian music: vocal sits same position; tabla replaces drums; tanpura is bed.
+// Relative per-stem levels BEFORE summing compensation.
+// Hierarchy: vocals > drums > instruments > bed. Unchanged from V2.
 // ─────────────────────────────────────────────────────────────────────────────
 const SECTION_TARGET_LUFS: Record<string, number> = {
-  drums:       -18,   // Kick/snare anchor — full energy, tightly controlled
-  instruments: -22,   // Support layer — below drums and vocals
-  vocals:      -16,   // Lead element — sits above everything else
-  other:       -23,   // Pads, drones, FX, tanpura — deepest in the mix
+  drums:       -18,
+  instruments: -22,
+  vocals:      -16,
+  other:       -23,
 };
 
+// Pre-master loudness target for the FINAL summed mix.
+// Industry practice: hand the mastering stage ~-18 to -23 LUFS with real
+// peaks well under 0dBFS. We trim toward the middle of that window.
+const PREMASTER_TARGET_LUFS = -20;
+const PREMASTER_TRIM_LIMIT  = 6;     // never trim more than ±6dB
+const OUTPUT_PEAK_CEILING   = 0.85;  // linear — headroom for auraMaster
+
 // ─────────────────────────────────────────────────────────────────────────────
-// PAN MAP — WESTERN INSTRUMENTS
-// Research sources: industry pan cheat sheets, pro engineer consensus
-// Rules applied:
-//   - Sub-bass below 80Hz: always center (bass, kick, 808)
-//   - Lead elements: always center (lead vocal, snare, kick)
-//   - Counterbalance: guitar L → guitar R, backing vocal L → BV R
-//   - Avoid hard pan (>0.8) for primary elements — causes mono issues
-//   - Hi-hats, overheads: moderate spread reflecting live drum kit
+// PAN MAP — WESTERN INSTRUMENTS (unchanged values from V2)
 // ─────────────────────────────────────────────────────────────────────────────
 const SLOT_PAN_WESTERN: Record<string, number> = {
   // ── DRUMS ──────────────────────────────────────────────────────────────
-  kick:           0,      // always center — sub energy must stay mono
-  snare:          0,      // always center — primary beat anchor
-  hihat:          0.45,   // audience perspective: right of center
+  kick:           0,
+  snare:          0,
+  hihat:          0.45,
   hi_hat:         0.45,
-  overhead:       0,      // overheads capture kit as stereo pair, keep wide
+  overhead:       0,
   room:           0,
-  clap:           0,      // clap replaces snare — center
+  clap:           0,
   percussion:     0.25,
   shaker:         0.35,
   tambourine:     -0.3,
   tom:            0.2,
-  tom_1:          0.2,    // high tom: slight right (audience perspective)
-  tom_2:          -0.2,   // mid tom: slight left
-  floor_tom:      -0.45,  // floor tom: moderate left
-  ride:           -0.4,   // ride cymbal: left (audience perspective)
-  crash:          0.5,    // crash right
+  tom_1:          0.2,
+  tom_2:          -0.2,
+  floor_tom:      -0.45,
+  ride:           -0.4,
+  crash:          0.5,
   crash_1:        0.5,
   crash_2:        -0.4,
 
   // ── BASS & LOW INSTRUMENTS ─────────────────────────────────────────────
-  bass:           0,      // always center — sub frequencies are non-directional
+  bass:           0,
   sub_bass:       0,
   bass_guitar:    0,
   electric_bass:  0,
 
   // ── GUITARS ────────────────────────────────────────────────────────────
-  // Research: doubled guitars panned hard L/R is industry standard.
-  // Single guitar: moderate pan, not hard. Chord-heavy guitar: wider spread.
-  guitar:         -0.55,  // primary guitar: left
-  guitar_1:       -0.55,  // first guitar: left
-  guitar_2:       0.55,   // second guitar: right (counterbalance)
-  guitar_3:       -0.3,   // third guitar: moderate left fill
+  guitar:         -0.55,
+  guitar_1:       -0.55,
+  guitar_2:       0.55,
+  guitar_3:       -0.3,
   acoustic_guitar:-0.5,
   electric_guitar:-0.55,
   rhythm_guitar:  -0.6,
-  lead_guitar:    0.6,    // lead guitar solos: spread right
+  lead_guitar:    0.6,
 
   // ── KEYBOARDS & PIANO ──────────────────────────────────────────────────
-  // Research: piano as chord carpet = center + wide. Solo piano = center.
-  // Multiple keys: spread to opposite sides.
-  piano:          0,      // main piano: center with width
+  piano:          0,
   piano_1:        -0.2,
   piano_2:        0.2,
   grand_piano:    0,
@@ -126,9 +141,9 @@ const SLOT_PAN_WESTERN: Record<string, number> = {
   keys:           0,
   synth:          -0.35,
   synth_1:        -0.35,
-  synth_2:        0.35,   // second synth: opposite side
+  synth_2:        0.35,
   synth_3:        -0.5,
-  pad:            0,      // pads: center but wide (handled by stereo_width)
+  pad:            0,
   arp:            0.4,
   strings:        0,
   strings_1:      -0.3,
@@ -137,20 +152,18 @@ const SLOT_PAN_WESTERN: Record<string, number> = {
   woodwind:       -0.2,
 
   // ── VOCALS ─────────────────────────────────────────────────────────────
-  // Industry rule: lead vocal always center. Backing/harmony spread symmetrically.
-  // Research: "vocals are the most important element — center keeps listener focused"
-  lead_vocal:     0,      // center — non-negotiable
+  lead_vocal:     0,
   vocal:          0,
   lead:           0,
-  backing:        -0.45,  // first backing vocal: left
+  backing:        -0.45,
   backing_1:      -0.45,
-  backing_2:      0.45,   // second backing: right (mirror)
+  backing_2:      0.45,
   backing_3:      -0.6,
   harmony:        -0.5,
   harmony_1:      -0.5,
   harmony_2:      0.5,
   adlibs:         0.35,
-  choir:          0,      // choir: center (stereo_width handles spread)
+  choir:          0,
   bgv:            -0.45,
 
   // ── FX & OTHER ─────────────────────────────────────────────────────────
@@ -164,28 +177,15 @@ const SLOT_PAN_WESTERN: Record<string, number> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PAN MAP — INDIAN INSTRUMENTS
-// Research: Indian classical/devotional mixing standards
-//
-// Core principles:
-//   - Tanpura (drone): wide stereo spread, center — foundational bed of the mix
-//   - Tabla: sits like a drum kit — center/slight right (audience perspective),
-//     the bayan (bass drum) left, dayan (treble drum) right
-//   - Harmonium: center-left — melodic foundation supporting vocalist
-//   - Sitar/Sarod: slight right spread — lead melodic instrument
-//   - Bansuri (flute): opposite to sitar — creates dialogue
-//   - Vocalist: always center, front of mix — same as Western lead vocal
-//   - Sarangi/Violin: slight left — bowing instrument, string texture
-//   - Santoor/Swarmandal: wide, supporting harmonic role
-//   - Manjira/Khartal: moderate spread — rhythmic accents
+// PAN MAP — INDIAN INSTRUMENTS (unchanged values from V2)
 // ─────────────────────────────────────────────────────────────────────────────
 const SLOT_PAN_INDIAN: Record<string, number> = {
   // ── PERCUSSION ─────────────────────────────────────────────────────────
-  tabla:          0,      // center — primary rhythm instrument
+  tabla:          0,
   tabla_1:        0,
   tabla_2:        0,
-  dayan:          0.2,    // right hand drum (treble)
-  bayan:          -0.2,   // left hand drum (bass)
+  dayan:          0.2,
+  bayan:          -0.2,
   mridangam:      0,
   dholak:         0,
   dhol:           0,
@@ -195,45 +195,41 @@ const SLOT_PAN_INDIAN: Record<string, number> = {
   morsing:        0.4,
   morchang:       0.4,
   khol:           0,
-  manjira:        -0.5,   // finger cymbals: slight left
-  khartal:        0.5,    // wooden clappers: slight right
+  manjira:        -0.5,
+  khartal:        0.5,
   chimta:         -0.35,
 
   // ── DRONE / HARMONIC BED ───────────────────────────────────────────────
-  // Tanpura is the foundation — wide, immersive, supporting the tonal center
-  tanpura:        0,      // center but with full stereo_width expansion
+  tanpura:        0,
   tamboura:       0,
   shruti_box:     0,
-  swarmandal:     0,      // harp-like drone — center/wide
+  swarmandal:     0,
 
   // ── MELODIC (LEAD) ─────────────────────────────────────────────────────
-  sitar:          0.3,    // lead string: slight right
+  sitar:          0.3,
   sarod:          0.3,
   surbahar:       0.25,
   veena:          0.25,
-  santoor:        -0.3,   // hammered dulcimer: slight left (dialogue with sitar)
-  sarangi:        -0.3,   // bowed strings: left — texture and ornament
+  santoor:        -0.3,
+  sarangi:        -0.3,
   esraj:          -0.25,
   dilruba:        -0.25,
-  violin:         -0.35,  // Indian violin: left (Carnatic tradition)
+  violin:         -0.35,
   viola:          -0.2,
   cello:          0.15,
 
   // ── WIND ───────────────────────────────────────────────────────────────
-  bansuri:        -0.4,   // bamboo flute: left — dialogue opposite sitar
+  bansuri:        -0.4,
   flute:          -0.35,
-  shehnai:        0.3,    // oboe-like: slight right
+  shehnai:        0.3,
   nadaswaram:     0.35,
   pungi:          0.4,
 
   // ── KEYBOARD/HARMONY ───────────────────────────────────────────────────
-  harmonium:      -0.2,   // left-center — melodic support under vocal
+  harmonium:      -0.2,
   accordion:      -0.2,
 
   // ── VOCALS (Indian) ────────────────────────────────────────────────────
-  // In Indian music, the soloist is always absolutely center, very upfront.
-  // Accompanying vocalists (choir, chorus) spread wide.
-  // Vocal ornamentation and alap: same center position.
   khyal:          0,
   dhrupad:        0,
   thumri:         0,
@@ -241,7 +237,7 @@ const SLOT_PAN_INDIAN: Record<string, number> = {
   ghazal:         0,
   bhajan_vocal:   0,
   kirtan_lead:    0,
-  kirtan_chorus:  0,      // chorus treated as wide choir
+  kirtan_chorus:  0,
 
   // ── REGIONAL/FOLK ──────────────────────────────────────────────────────
   dholki:         0,
@@ -254,7 +250,7 @@ const SLOT_PAN_INDIAN: Record<string, number> = {
   rubab:          0.3,
 };
 
-// Merge both maps — Indian slots override Western defaults where they overlap
+// Merge — Indian slots override Western defaults where they overlap
 const SLOT_PAN: Record<string, number> = {
   ...SLOT_PAN_WESTERN,
   ...SLOT_PAN_INDIAN,
@@ -262,16 +258,15 @@ const SLOT_PAN: Record<string, number> = {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HIGH-PASS FILTER CUTOFFS (Hz)
-// Industry practice: every non-bass instrument gets an HPF to remove
-// inaudible low-end that muddies the mix and wastes headroom.
-// Indian instruments: similar logic — tabla keeps low end, most other
-// instruments roll off below their fundamental frequency range.
+// Now applied as a SINGLE 12dB/oct Butterworth (Q=0.707) — the V2 cascade
+// was effectively a 24dB/oct LR4 hitting -6dB at the stated cutoff, which
+// bit noticeably higher than these numbers imply.
 // ─────────────────────────────────────────────────────────────────────────────
 const SLOT_HPF: Record<string, number> = {
   // Western drums
-  kick:           20,     // keep full range — sub defines kick character
-  snare:          80,     // remove sub but keep body
-  hihat:          250,    // hi-hats have almost no useful energy below 250Hz
+  kick:           20,
+  snare:          80,
+  hihat:          250,
   hi_hat:         250,
   overhead:       80,
   room:           60,
@@ -289,12 +284,12 @@ const SLOT_HPF: Record<string, number> = {
   crash_2:        200,
 
   // Bass
-  bass:           30,     // keep fundamental but remove rumble
+  bass:           30,
   sub_bass:       20,
   bass_guitar:    30,
 
   // Guitars
-  guitar:         80,     // guitars have almost nothing below 80Hz worth keeping
+  guitar:         80,
   guitar_1:       80,
   guitar_2:       80,
   guitar_3:       80,
@@ -318,7 +313,7 @@ const SLOT_HPF: Record<string, number> = {
   brass:          80,
   woodwind:       120,
 
-  // Vocals (industry standard: roll off everything below 80-100Hz)
+  // Vocals
   lead_vocal:     80,
   vocal:          80,
   lead:           80,
@@ -342,51 +337,49 @@ const SLOT_HPF: Record<string, number> = {
   misc:           60,
 
   // ── Indian percussion ──────────────────────────────────────────────────
-  // Tabla: bayan (bass) has significant low-end, dayan is bright
-  // Keep more low-end than Western snare equivalents
   tabla:          40,
   tabla_1:        40,
   tabla_2:        40,
-  dayan:          100,    // treble drum — bright, less low-end
-  bayan:          40,     // bass drum — keep low-end
+  dayan:          100,
+  bayan:          40,
   mridangam:      50,
   dholak:         50,
   dhol:           40,
   pakhawaj:       40,
   ghatam:         80,
   kanjira:        150,
+  morsing:        200,    // [FIX] was missing — jaw harp, same range as morchang
   morchang:       200,
-  morchang_1:     200,
-  manjira:        400,    // finger cymbals — almost entirely high frequency
+  manjira:        400,
   khartal:        350,
   chimta:         300,
 
   // Indian drone/bed
-  tanpura:        60,     // tanpura has full rich low-mid content — keep it
+  tanpura:        60,
   tamboura:       60,
   shruti_box:     80,
   swarmandal:     80,
 
   // Indian melodic
-  sitar:          100,    // sitar fundamental is mostly above 100Hz
+  sitar:          100,
   sarod:          80,
-  surbahar:       60,     // surbahar is lower-pitched than sitar
+  surbahar:       60,
   veena:          80,
   santoor:        100,
   sarangi:        80,
   esraj:          80,
   dilruba:        80,
-  violin:         120,    // Indian violin plays in mid-high range
-  bansuri:        120,    // flute — roll off everything below fundamental
+  violin:         120,
+  bansuri:        120,
   flute:          120,
-  shehnai:        200,    // oboe-like, mostly mid-high
+  shehnai:        200,
   nadaswaram:     150,
-  harmonium:      60,     // harmonium has low notes — keep some low-end
+  harmonium:      60,
   accordion:      80,
 
-  // Indian vocals (slightly tighter HPF — Indian vocal styles have strong sibilance)
+  // Indian vocals
   khyal:          100,
-  dhrupad:        80,     // dhrupad has deeper voice quality — less cut
+  dhrupad:        80,
   thumri:         100,
   qawwali:        100,
   ghazal:         100,
@@ -396,22 +389,21 @@ const SLOT_HPF: Record<string, number> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LOW-PASS FILTER — applied only to specific low-only instruments
-// to prevent unwanted high-frequency content
+// LOW-PASS FILTER — specific low-only / bed instruments
 // ─────────────────────────────────────────────────────────────────────────────
 const SLOT_LPF: Record<string, number | null> = {
-  sub_bass:    120,    // sub bass only wants very low frequencies
-  bass:        null,   // full bass keeps clarity in highs
+  sub_bass:    120,
+  bass:        null,
   bass_guitar: null,
-  tanpura:     8000,   // tanpura drone — roll off harsh highs for bed quality
+  tanpura:     8000,
   drone:       6000,
   ambience:    10000,
-  pad:         null,   // pads can have full range
+  pad:         null,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SLOT PRIORITY — determines gain precedence when multiple stems compete
-// Higher number = more forward in the mix
+// SLOT PRIORITY — gain precedence. Higher = more forward.
+// Trim formula gives roughly -0.6dB (priority 1) … +0.75dB (priority 10).
 // ─────────────────────────────────────────────────────────────────────────────
 const SLOT_PRIORITY: Record<string, number> = {
   lead_vocal: 10, vocal: 10, lead: 10,
@@ -427,6 +419,23 @@ const SLOT_PRIORITY: Record<string, number> = {
   harmony: 3, harmony_1: 3, harmony_2: 3,
   tanpura: 2, tamboura: 2, shruti_box: 2, drone: 2, ambience: 1, pad: 2,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEREO WIDTH — slots that should be rendered as a WIDE bed.
+// V2 promised this in comments; V3 actually implements it.
+//   - Stereo sources: M/S widener (side boost, mono-compatible fold-down)
+//   - Mono sources:   light Haas spread (12ms, reduced level on delayed side)
+// ─────────────────────────────────────────────────────────────────────────────
+const WIDE_SLOTS = new Set([
+  "tanpura", "tamboura", "shruti_box", "swarmandal",
+  "pad", "choir", "kirtan_chorus", "strings", "ambience", "overhead",
+]);
+const WIDTH_SIDE_BOOST = 1.35;  // M/S side gain for wide stereo beds
+const HAAS_DELAY_SEC   = 0.012; // 12ms — inside the Haas window
+const HAAS_SIDE_LEVEL  = 0.85;  // delayed side slightly lower → gentler comb on mono fold
+
+// Slots forced to pan center regardless of anything else
+const FORCE_CENTER = new Set(["tanpura", "tamboura", "shruti_box", "drone", "ambience"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -445,51 +454,87 @@ function getSlotValue<T>(map: Record<string, T>, stem: MixerStemRecord, fallback
   return map[stem.slot] ?? map[base] ?? fallback;
 }
 
+/** Build per-render context: section counts + duplicated slot bases. */
+function buildMixContext(stems: MixerStemRecord[]): MixContext {
+  const sectionCounts: Record<string, number> = {};
+  const baseCounts:    Record<string, number> = {};
+
+  for (const s of stems) {
+    sectionCounts[s.section] = (sectionCounts[s.section] ?? 0) + 1;
+    const b = slotBase(s.slot);
+    baseCounts[b] = (baseCounts[b] ?? 0) + 1;
+  }
+
+  const duplicatedBases = new Set<string>(
+    Object.keys(baseCounts).filter(b => baseCounts[b] > 1)
+  );
+
+  return { sectionCounts, duplicatedBases };
+}
+
 /**
- * Compute gain adjustment to bring a stem toward its section target LUFS.
- * Also applies a priority-based fine-trim to push lead elements slightly
- * forward and supporting elements slightly back.
+ * Gain for a stem, in dB. Order of operations:
+ *   1. Match to section target LUFS (clamped ±18dB)
+ *   2. Summing compensation: N stems in a section sum ~10·log10(N) dB hotter
+ *      than one — subtract it so the SECTION lands at its target, not each stem.
+ *      (10·log10 assumes uncorrelated sources — the accepted compromise for stems.)
+ *   3. Priority fine-trim (±<1dB)
+ *   4. mix_role: "main" +2dB, "supporting" -1dB, anything else NEUTRAL.
+ *      [FIX] V2 penalized every unset role by -1dB.
+ *   5. true_peak ceiling: never gain a stem so its true peak would exceed -1dBTP.
+ *      [NEW] prevents one hot stem forcing the whole mix down at normalization.
  */
-function gainForStem(stem: MixerStemRecord): number {
-  const targetLufs = SECTION_TARGET_LUFS[stem.section] ?? -20;
+function gainDbForStem(stem: MixerStemRecord, ctx: MixContext): number {
+  const targetLufs   = SECTION_TARGET_LUFS[stem.section] ?? -20;
   const measuredLufs = stem.integrated_lufs;
 
   let gainDb: number;
   if (measuredLufs == null || measuredLufs === 0) {
-    gainDb = -1; // conservative fallback
+    gainDb = -1; // conservative fallback when analysis is missing
   } else {
     gainDb = targetLufs - measuredLufs;
     gainDb = Math.max(-18, Math.min(18, gainDb));
   }
 
-  // Priority trim: ±1.5dB nudge based on how forward this instrument should be
+  // 2. Summing compensation
+  const n = ctx.sectionCounts[stem.section] ?? 1;
+  if (n > 1) gainDb -= 10 * Math.log10(n);
+
+  // 3. Priority trim
   const base = slotBase(stem.slot);
   const priority = SLOT_PRIORITY[stem.slot] ?? SLOT_PRIORITY[base] ?? 5;
-  const priorityTrim = ((priority - 5) / 10) * 1.5;
-  gainDb += priorityTrim;
+  gainDb += ((priority - 5) / 10) * 1.5;
 
-  // mix_role override: Main gets +2dB forward push, Supporting gets -1dB back
+  // 4. mix_role — explicit values only
   if (stem.mix_role === "main") {
     gainDb += 2.0;
-  } else {
+  } else if (stem.mix_role === "supporting") {
     gainDb -= 1.0;
   }
+  // unset / unknown → neutral
 
-  return dbToLinear(gainDb);
+  // 5. true_peak ceiling (analysis reports dBTP)
+  if (stem.true_peak != null && Number.isFinite(stem.true_peak)) {
+    const ceiling = -1.0 - stem.true_peak; // max gain before exceeding -1dBTP
+    gainDb = Math.min(gainDb, ceiling);
+  }
+
+  return gainDb;
 }
 
 /**
- * Compute stereo pan position.
- * For stems with a high slot_index (e.g. guitar_3 = third guitar),
- * mirror the pan of the base slot to counterbalance automatically.
- * Wide-source stems (stereo_width > 40%) are pulled toward center.
+ * Pan position for a stem.
+ * [FIX] Auto-mirroring now applies ONLY when the exact slot key was not in
+ * the pan map — explicitly-mapped even slots (guitar_2 = +0.55, backing_2 =
+ * +0.45 …) already encode their counterbalance and must not be flipped again.
  */
-function panForStem(stem: MixerStemRecord): number {
+function panForStem(stem: MixerStemRecord, ctx: MixContext): number {
   const base = slotBase(stem.slot);
+  const exactMatch = SLOT_PAN[stem.slot] !== undefined;
   let pan = getSlotValue(SLOT_PAN, stem, 0);
 
-  // Auto-mirror for multiple instances: even index → mirror
-  if (stem.slot_index > 1 && stem.slot_index % 2 === 0) {
+  // Auto-mirror ONLY for fallback (base-map) lookups on even instances
+  if (!exactMatch && stem.slot_index > 1 && stem.slot_index % 2 === 0) {
     pan = -pan;
   }
 
@@ -499,30 +544,35 @@ function panForStem(stem: MixerStemRecord): number {
     pan = pan * (1 - widthFactor * 0.6);
   }
 
-  // Tanpura/drone special case: always center regardless
-  if (["tanpura", "tamboura", "shruti_box", "drone", "ambience"].includes(base)) {
-    pan = 0;
-  }
+  // Drone/bed special case: always center
+  if (FORCE_CENTER.has(base)) pan = 0;
 
-  // mix_role override: Main pulls strongly toward center
-  // Supporting stays at its natural slot pan position
+  // mix_role shaping:
+  //   main       → anchor near center (80% pull)
+  //   supporting → if it duplicates another instance of the SAME instrument,
+  //                push it wider so it separates from the main instance
   if (stem.mix_role === "main") {
-    pan = pan * 0.2; // 80% pull toward center — main element anchors the mix
+    pan = pan * 0.2;
+  } else if (stem.mix_role === "supporting" && ctx.duplicatedBases.has(base)) {
+    pan = pan * 1.3;
   }
 
   return Math.max(-1, Math.min(1, pan));
 }
 
 /**
- * Compute HPF cutoff.
- * Also checks frequency analysis — if low-end content is already minimal,
- * push the HPF up slightly more aggressively.
+ * HPF cutoff. Supporting duplicates get a slightly higher cutoff (×1.2) so
+ * they stop fighting the main instance in the low-mids.
  */
-function hpfForStem(stem: MixerStemRecord): number {
+function hpfForStem(stem: MixerStemRecord, ctx: MixContext): number {
   let hz = getSlotValue(SLOT_HPF, stem, 80);
 
-  // Frequency-aware adjustment: if sub content is already very low,
-  // push HPF up a bit more (the stem doesn't need those frequencies)
+  const base = slotBase(stem.slot);
+  if (stem.mix_role === "supporting" && ctx.duplicatedBases.has(base)) {
+    hz = Math.min(hz * 1.2, 400);
+  }
+
+  // Frequency-aware nudge: if low content is already minimal, clean up harder
   if (stem.freq_sub != null && stem.freq_sub < -48) {
     hz = Math.min(hz * 1.4, 200);
   }
@@ -533,12 +583,121 @@ function hpfForStem(stem: MixerStemRecord): number {
   return Math.max(20, hz);
 }
 
-/**
- * Compute LPF cutoff, if applicable.
- */
 function lpfForStem(stem: MixerStemRecord): number | null {
   const base = slotBase(stem.slot);
   return SLOT_LPF[stem.slot] ?? SLOT_LPF[base] ?? null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEREO WIDTH PROCESSING
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * M/S widener for STEREO sources.
+ *   mid  = 0.5·(L+R)
+ *   side = 0.5·(L−R) × sideBoost
+ *   L'   = mid + side,  R' = mid − side
+ * Mono fold-down = mid only → fully mono-compatible.
+ * Returns the output node to continue the chain from.
+ */
+function buildMsWidener(
+  ctx: OfflineAudioContext,
+  input: AudioNode,
+  sideBoost: number,
+): AudioNode {
+  const splitter = ctx.createChannelSplitter(2);
+  input.connect(splitter);
+
+  // mid = 0.5L + 0.5R
+  const mid = ctx.createGain();
+  mid.gain.value = 1; // sums two 0.5-scaled inputs
+  const lHalf = ctx.createGain(); lHalf.gain.value = 0.5;
+  const rHalf = ctx.createGain(); rHalf.gain.value = 0.5;
+  splitter.connect(lHalf, 0);
+  splitter.connect(rHalf, 1);
+  lHalf.connect(mid);
+  rHalf.connect(mid);
+
+  // side = (0.5L − 0.5R) × boost
+  const side = ctx.createGain();
+  side.gain.value = sideBoost;
+  const lPos = ctx.createGain(); lPos.gain.value = 0.5;
+  const rNeg = ctx.createGain(); rNeg.gain.value = -0.5;
+  splitter.connect(lPos, 0);
+  splitter.connect(rNeg, 1);
+  lPos.connect(side);
+  rNeg.connect(side);
+
+  // Recombine: L' = mid + side, R' = mid − side
+  const sideInv = ctx.createGain();
+  sideInv.gain.value = -1;
+  side.connect(sideInv);
+
+  const merger = ctx.createChannelMerger(2);
+  const outL = ctx.createGain();
+  const outR = ctx.createGain();
+  mid.connect(outL);  side.connect(outL);
+  mid.connect(outR);  sideInv.connect(outR);
+  outL.connect(merger, 0, 0);
+  outR.connect(merger, 0, 1);
+
+  return merger;
+}
+
+/**
+ * Haas spread for MONO bed sources: dry → L, 12ms delayed (slightly lower) → R.
+ * Gives a mono tanpura/pad a sense of width. Small comb artifact on mono
+ * fold-down is the accepted trade-off; delay is short and side level reduced.
+ */
+function buildHaasSpread(ctx: OfflineAudioContext, input: AudioNode): AudioNode {
+  const delay = ctx.createDelay(0.05);
+  delay.delayTime.value = HAAS_DELAY_SEC;
+
+  const wet = ctx.createGain();
+  wet.gain.value = HAAS_SIDE_LEVEL;
+  input.connect(delay);
+  delay.connect(wet);
+
+  const merger = ctx.createChannelMerger(2);
+  input.connect(merger, 0, 0);
+  wet.connect(merger, 0, 1);
+  return merger;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOUDNESS MEASUREMENT (gated-RMS approximation of integrated LUFS)
+// Full BS.1770 needs K-weighting + two-stage gating; for a pre-master trim a
+// 400ms-block gated RMS tracks integrated LUFS within ~1–2dB on typical
+// program material, which is plenty for a static trim toward -20.
+// ─────────────────────────────────────────────────────────────────────────────
+function measureLoudnessApproxDb(buffer: AudioBuffer): number | null {
+  const blockLen = Math.floor(0.4 * buffer.sampleRate); // 400ms blocks
+  if (blockLen === 0 || buffer.length < blockLen) return null;
+
+  const channels: Float32Array[] = [];
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    channels.push(buffer.getChannelData(ch));
+  }
+
+  const blockPowers: number[] = [];
+  for (let start = 0; start + blockLen <= buffer.length; start += blockLen) {
+    let sumSq = 0;
+    for (const data of channels) {
+      for (let s = start; s < start + blockLen; s++) {
+        sumSq += data[s] * data[s];
+      }
+    }
+    blockPowers.push(sumSq / (blockLen * channels.length));
+  }
+  if (blockPowers.length === 0) return null;
+
+  // Absolute gate: ignore silence/near-silence blocks (below -60dBFS power)
+  const gateThreshold = Math.pow(10, -60 / 10);
+  const gated = blockPowers.filter(p => p > gateThreshold);
+  if (gated.length === 0) return null;
+
+  const meanPower = gated.reduce((a, b) => a + b, 0) / gated.length;
+  return 10 * Math.log10(meanPower);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -546,12 +705,12 @@ function lpfForStem(stem: MixerStemRecord): number | null {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * mixStems — Aura Mixer V2 entry point.
+ * mixStems — Aura Mixer V3 entry point.
  *
  * @param buffers     Decoded AudioBuffers, one per stem, same order as stems[].
  * @param stems       Analysis records, same order as buffers[].
  * @param sampleRate  Output sample rate (default: 44100).
- * @returns A properly mixed stereo AudioBuffer, ready for auraMaster().
+ * @returns A mixed stereo AudioBuffer at ~-20 LUFS / ≤0.85 peak, ready for auraMaster().
  */
 export async function mixStems(
   buffers:    AudioBuffer[],
@@ -561,19 +720,19 @@ export async function mixStems(
   if (buffers.length === 0) throw new Error("[AuraMixer] No buffers provided.");
   if (buffers.length !== stems.length) throw new Error("[AuraMixer] Buffer/stem count mismatch.");
 
-  const maxLength = Math.max(...buffers.map(b => b.length));
+  // [FIX] Length in SECONDS, not frames — handles mixed sample rates correctly
+  const maxDuration  = Math.max(...buffers.map(b => b.duration));
+  const renderLength = Math.ceil(maxDuration * sampleRate);
 
-  // OfflineAudioContext — faster than real-time, exact length output
-  const offlineCtx = new OfflineAudioContext(2, maxLength, sampleRate);
+  const offlineCtx = new OfflineAudioContext(2, renderLength, sampleRate);
 
-  // Master output gain — leave headroom for auraMaster's limiter
-  // Research: mixes should land around -18 to -23 LUFS pre-master
-  // We target the mix to sum cleanly, auraMaster handles final loudness
+  // Master output gain — summing compensation now does the heavy lifting,
+  // this is just a final safety pad before render.
   const masterGain = offlineCtx.createGain();
-  masterGain.gain.value = 0.80;
+  masterGain.gain.value = 0.9;
   masterGain.connect(offlineCtx.destination);
 
-  // Log what the mixer is doing for debugging
+  const mixCtx = buildMixContext(stems);
   const log: string[] = [];
 
   for (let i = 0; i < buffers.length; i++) {
@@ -581,95 +740,120 @@ export async function mixStems(
     const stem   = stems[i];
     const base   = slotBase(stem.slot);
 
-    const gainLinear = gainForStem(stem);
-    const pan        = panForStem(stem);
-    const hpfHz      = hpfForStem(stem);
+    const gainDb     = gainDbForStem(stem, mixCtx);
+    const gainLinear = dbToLinear(gainDb);
+    const pan        = panForStem(stem, mixCtx);
+    const hpfHz      = hpfForStem(stem, mixCtx);
     const lpfHz      = lpfForStem(stem);
-    const gainDb     = 20 * Math.log10(gainLinear);
+
+    const isWideBed     = WIDE_SLOTS.has(base);
+    const isWideStereo  = buffer.numberOfChannels >= 2
+                       && stem.stereo_width != null
+                       && stem.stereo_width > 60;
+    // Wide stereo material bypasses StereoPanner (it attenuates one channel
+    // and collapses the image). Wide beds get explicit width processing.
+    const skipPanner = isWideBed || isWideStereo;
 
     log.push(
-      `[${stem.section}/${stem.slot}] gain=${gainDb.toFixed(1)}dB pan=${pan.toFixed(2)} HPF=${hpfHz}Hz${lpfHz ? ` LPF=${lpfHz}Hz` : ""}`
+      `[${stem.section}/${stem.slot}]` +
+      ` gain=${gainDb.toFixed(1)}dB pan=${skipPanner ? "wide" : pan.toFixed(2)}` +
+      ` HPF=${hpfHz.toFixed(0)}Hz${lpfHz ? ` LPF=${lpfHz}Hz` : ""}` +
+      `${stem.mix_role ? ` role=${stem.mix_role}` : ""}`
     );
 
     // ── SOURCE ────────────────────────────────────────────────────────────
     const source = offlineCtx.createBufferSource();
     source.buffer = buffer;
 
-    // ── HPF (two cascaded = 12dB/oct Butterworth roll-off) ────────────────
-    const hpf1 = offlineCtx.createBiquadFilter();
-    hpf1.type = "highpass";
-    hpf1.frequency.value = hpfHz;
-    hpf1.Q.value = 0.707;
+    // ── HPF (single 12dB/oct Butterworth — see header note) ──────────────
+    const hpf = offlineCtx.createBiquadFilter();
+    hpf.type = "highpass";
+    hpf.frequency.value = hpfHz;
+    hpf.Q.value = 0.707;
+    source.connect(hpf);
+    let lastNode: AudioNode = hpf;
 
-    const hpf2 = offlineCtx.createBiquadFilter();
-    hpf2.type = "highpass";
-    hpf2.frequency.value = hpfHz;
-    hpf2.Q.value = 0.707;
-
-    // ── LPF (optional — only for drone/sub elements) ──────────────────────
-    let lastNode: AudioNode = hpf2;
+    // ── LPF (optional — drone/sub elements only) ──────────────────────────
     if (lpfHz != null) {
       const lpf = offlineCtx.createBiquadFilter();
       lpf.type = "lowpass";
       lpf.frequency.value = lpfHz;
       lpf.Q.value = 0.707;
-      hpf2.connect(lpf);
+      lastNode.connect(lpf);
       lastNode = lpf;
     }
 
     // ── GAIN STAGING ─────────────────────────────────────────────────────
     const gainNode = offlineCtx.createGain();
     gainNode.gain.value = gainLinear;
-
-    // ── STEREO PANNING ────────────────────────────────────────────────────
-    const panNode = offlineCtx.createStereoPanner();
-    panNode.pan.value = pan;
-
-    // ── SIGNAL CHAIN: source → hpf1 → hpf2 → [lpf] → gain → pan → master ──
-    source.connect(hpf1);
-    hpf1.connect(hpf2);
-    if (lpfHz != null) {
-      // lastNode is already connected: hpf2 → lpf
-    } else {
-      lastNode = hpf2;
-    }
     lastNode.connect(gainNode);
-    gainNode.connect(panNode);
-    panNode.connect(masterGain);
+    lastNode = gainNode;
 
+    // ── WIDTH / PANNING ───────────────────────────────────────────────────
+    if (isWideBed) {
+      // Bed elements: real width processing instead of a panner
+      if (buffer.numberOfChannels >= 2) {
+        lastNode = buildMsWidener(offlineCtx, lastNode, WIDTH_SIDE_BOOST);
+      } else {
+        lastNode = buildHaasSpread(offlineCtx, lastNode);
+      }
+    } else if (!skipPanner) {
+      const panNode = offlineCtx.createStereoPanner();
+      panNode.pan.value = pan;
+      lastNode.connect(panNode);
+      lastNode = panNode;
+    }
+    // (wide stereo non-bed stems: connect straight through, image preserved)
+
+    lastNode.connect(masterGain);
     source.start(0);
   }
 
-  console.log("[AuraMixer V2] Processing stems:");
+  console.log("[AuraMixer V3] Processing stems:");
   log.forEach(l => console.log(" ", l));
 
   // ── RENDER ────────────────────────────────────────────────────────────────
   const mixedBuffer = await offlineCtx.startRendering();
 
-  // ── OUTPUT SAFETY NORMALIZATION ───────────────────────────────────────────
-  // Target: leave the mix at 0.85 peak max so auraMaster has clean headroom
+  // ── PRE-MASTER LOUDNESS TRIM ──────────────────────────────────────────────
+  // [NEW] Peak normalization alone controls peaks, not loudness — a dense mix
+  // could hand auraMaster -10 LUFS with no dynamics headroom. Measure and trim
+  // toward the target so mastering always receives a consistent level.
+  const measuredDb = measureLoudnessApproxDb(mixedBuffer);
+  let trimLinear = 1;
+  if (measuredDb != null) {
+    let trimDb = PREMASTER_TARGET_LUFS - measuredDb;
+    trimDb = Math.max(-PREMASTER_TRIM_LIMIT, Math.min(PREMASTER_TRIM_LIMIT, trimDb));
+    trimLinear = dbToLinear(trimDb);
+    console.log(
+      `[AuraMixer V3] Loudness ≈ ${measuredDb.toFixed(1)}dB → trim ${trimDb >= 0 ? "+" : ""}${trimDb.toFixed(1)}dB toward ${PREMASTER_TARGET_LUFS} LUFS`
+    );
+  }
+
+  // ── APPLY TRIM + OUTPUT PEAK SAFETY (single pass) ─────────────────────────
   let peak = 0;
   for (let ch = 0; ch < mixedBuffer.numberOfChannels; ch++) {
     const data = mixedBuffer.getChannelData(ch);
     for (let s = 0; s < data.length; s++) {
+      data[s] *= trimLinear;
       const abs = Math.abs(data[s]);
       if (abs > peak) peak = abs;
     }
   }
 
-  if (peak > 0.85) {
-    const scale = 0.85 / peak;
+  if (peak > OUTPUT_PEAK_CEILING) {
+    const scale = OUTPUT_PEAK_CEILING / peak;
     for (let ch = 0; ch < mixedBuffer.numberOfChannels; ch++) {
       const data = mixedBuffer.getChannelData(ch);
       for (let s = 0; s < data.length; s++) data[s] *= scale;
     }
-    console.log(`[AuraMixer V2] Peak ${peak.toFixed(3)} → scaled by ${(0.85/peak).toFixed(3)}`);
+    console.log(`[AuraMixer V3] Peak ${peak.toFixed(3)} → scaled by ${scale.toFixed(3)}`);
   } else {
-    console.log(`[AuraMixer V2] Peak ${peak.toFixed(3)} — no scaling needed`);
+    console.log(`[AuraMixer V3] Peak ${peak.toFixed(3)} — within ceiling`);
   }
 
-  const durSec = (maxLength / sampleRate).toFixed(1);
-  console.log(`[AuraMixer V2] ✓ ${stems.length} stems → ${durSec}s stereo — ready for auraMaster`);
+  const durSec = (renderLength / sampleRate).toFixed(1);
+  console.log(`[AuraMixer V3] ✓ ${stems.length} stems → ${durSec}s stereo — ready for auraMaster`);
 
   return mixedBuffer;
 }
