@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { fetchAndLogAudio, checkEgressBudget, checkUsageSlabsAndNotify, notifyEgressBlocked } from "@/lib/usageTracking";
-import { getCachedAudio, setCachedAudio } from "@/lib/audioCache";
+import { getCachedAudio, setCachedAudio, deleteCachedAudio } from "@/lib/audioCache";
 import WaveSurfer from "wavesurfer.js";
 import { auraMaster } from "@/intelligence/master/auraMaster";
 import { SLOT_LABELS, type StemSection } from "@/intelligence/stems/stemsIdentifier";
@@ -333,13 +333,6 @@ export default function DAWPage() {
   // STEMS AUDIO GRAPH
   // ─────────────────────────────────────────────────────────────────────────
   const buildStemsAudioGraph = async () => {
-    const budgetCheck = await checkEgressBudget();
-    if (!budgetCheck.allowed) {
-      setEgressBlocked(true);
-      notifyEgressBlocked();
-      return;
-    }
-
     if (audioCtxRef.current) audioCtxRef.current.close();
     const ctx = new AudioContext();
     audioCtxRef.current = ctx;
@@ -347,6 +340,8 @@ export default function DAWPage() {
     const masterIn = buildMasterChain(ctx);
 
     let maxDuration = 0;
+    let budgetAllowed: boolean | null = null; // lazy — only queried if a real fetch is needed
+    let fetchedAny = false;
 
     for (const track of tracks) {
       const url = audioUrls[track.name];
@@ -357,9 +352,24 @@ export default function DAWPage() {
         if (blob) {
           console.log("[AudioCache] DAW stem hit:", track.filePath);
         } else {
+          // Cache miss — this is the ONLY point egress can happen, so this is
+          // where the budget gate lives. Fully-cached sessions never get here.
+          if (budgetAllowed === null) {
+            budgetAllowed = (await checkEgressBudget()).allowed;
+            if (!budgetAllowed) { setEgressBlocked(true); notifyEgressBlocked(); }
+          }
+          if (!budgetAllowed) continue; // skip uncached stems; cached ones still play
           blob = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
-          setCachedAudio(track.filePath, blob);
+          fetchedAny = true;
+          await setCachedAudio(track.filePath, blob); // awaited — no race with waveforms
         }
+
+        // Feed the waveform loader the exact blob we already have —
+        // loadWaveforms will hit blobUrlCacheRef and never re-fetch.
+        if (!blobUrlCacheRef.current[track.name]) {
+          blobUrlCacheRef.current[track.name] = URL.createObjectURL(blob);
+        }
+
         const arrayBuffer = await blob.arrayBuffer();
         const buffer      = await ctx.decodeAudioData(arrayBuffer);
 
@@ -379,7 +389,7 @@ export default function DAWPage() {
 
     durationSeconds.current = maxDuration;
     setDuration(formatTime(maxDuration));
-    checkUsageSlabsAndNotify();
+    if (fetchedAny) checkUsageSlabsAndNotify();
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -406,21 +416,27 @@ export default function DAWPage() {
     const url = audioUrls[firstTrack.name];
     if (!url) return;
 
-    const budgetCheck = await checkEgressBudget();
-    if (!budgetCheck.allowed) {
-      setEgressBlocked(true);
-      notifyEgressBlocked();
-      return;
-    }
-
     let blob = await getCachedAudio(firstTrack.filePath);
     if (blob) {
       console.log("[AudioCache] DAW mix audio hit:", firstTrack.filePath);
     } else {
-      blob = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
+      // Budget gate only on a real cache miss
+      const budgetCheck = await checkEgressBudget();
+      if (!budgetCheck.allowed) {
+        setEgressBlocked(true);
+        notifyEgressBlocked();
+        return;
+      }
+      blob = await fetchAndLogAudio(url, "preview_play", project?.id); // was mislabeled daw_stem_load
       checkUsageSlabsAndNotify();
-      setCachedAudio(firstTrack.filePath, blob);
+      await setCachedAudio(firstTrack.filePath, blob);
     }
+
+    // One fetch feeds both playback and waveform
+    if (!blobUrlCacheRef.current[firstTrack.name]) {
+      blobUrlCacheRef.current[firstTrack.name] = URL.createObjectURL(blob);
+    }
+
     const arrayBuffer  = await blob.arrayBuffer();
     const ctx          = new AudioContext();
     const buffer       = await ctx.decodeAudioData(arrayBuffer);
@@ -449,12 +465,8 @@ export default function DAWPage() {
     Object.values(wavesurferRefs.current).forEach(ws => ws?.destroy());
     wavesurferRefs.current = {};
 
-    const budgetCheck = await checkEgressBudget();
-    if (!budgetCheck.allowed) {
-      setEgressBlocked(true);
-      notifyEgressBlocked();
-      return;
-    }
+    let budgetAllowed: boolean | null = null; // lazy — cached sessions never query it
+    let fetchedAny = false;
 
     for (const track of tracks) {
       const url = audioUrls[track.name];
@@ -477,8 +489,14 @@ export default function DAWPage() {
           if (blob) {
             console.log("[AudioCache] DAW waveform hit:", track.filePath);
           } else {
+            if (budgetAllowed === null) {
+              budgetAllowed = (await checkEgressBudget()).allowed;
+              if (!budgetAllowed) { setEgressBlocked(true); notifyEgressBlocked(); }
+            }
+            if (!budgetAllowed) { wavesurferRefs.current[track.name] = ws; continue; } // blank waveform, no egress
             blob = await fetchAndLogAudio(url, "daw_stem_load", project?.id);
-            setCachedAudio(track.filePath, blob);
+            fetchedAny = true;
+            await setCachedAudio(track.filePath, blob);
           }
           blobUrl = URL.createObjectURL(blob);
           blobUrlCacheRef.current[track.name] = blobUrl;
@@ -490,7 +508,7 @@ export default function DAWPage() {
 
       wavesurferRefs.current[track.name] = ws;
     }
-    checkUsageSlabsAndNotify();
+    if (fetchedAny) checkUsageSlabsAndNotify();
   };
 
   // Resize-only redraw — no fetch, no logging, no budget check
@@ -748,25 +766,33 @@ export default function DAWPage() {
     if (!tracks[0]) return;
     setIsExporting(true); setExportStatus("Fetching source...");
 
-    const budgetCheck = await checkEgressBudget();
-    if (!budgetCheck.allowed) {
-      setEgressBlocked(true);
-      notifyEgressBlocked();
-      setIsExporting(false);
-      return;
-    }
-
     try {
-      const url      = audioUrls[tracks[0].name];
-      const blob     = await fetchAndLogAudio(url, "download", project?.id);
-      checkUsageSlabsAndNotify();
+      const url = audioUrls[tracks[0].name];
+      let blob = await getCachedAudio(tracks[0].filePath);
+      if (blob) {
+        console.log("[AudioCache] Export source hit:", tracks[0].filePath);
+      } else {
+        const budgetCheck = await checkEgressBudget();
+        if (!budgetCheck.allowed) {
+          setEgressBlocked(true);
+          notifyEgressBlocked();
+          setIsExporting(false);
+          return;
+        }
+        blob = await fetchAndLogAudio(url, "download", project?.id);
+        checkUsageSlabsAndNotify();
+        await setCachedAudio(tracks[0].filePath, blob);
+      }
       const file     = new File([blob], tracks[0].name, { type: blob.type });
       setExportStatus("Processing master chain...");
       const result   = await auraMaster(file, { inputGain, lowShelfGain, lowShelfFreq, highShelfGain, highShelfFreq, saturationDrive, limiterCeiling, targetLUFS });
       setExportStatus("Uploading...");
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      if (project.master_file_path) await supabase.storage.from("project-files").remove([project.master_file_path]);
+      if (project.master_file_path) {
+        await supabase.storage.from("project-files").remove([project.master_file_path]);
+        deleteCachedAudio(project.master_file_path); // evict stale master from browser cache
+      }
       const masterPath = `${user.id}/masters/${params.id}-${Date.now()}-master.wav`;
       const { data: up, error: ue } = await supabase.storage.from("project-files").upload(masterPath, result.masterBlob, { contentType: "audio/wav" });
       if (ue) { setExportStatus("Upload failed."); return; }
@@ -1543,7 +1569,7 @@ export default function DAWPage() {
           </div>
 
           {/* Master Strip */}
-          <div className={`rounded-2xl p-3 overflow-hidden min-h-0 flex-col border ${mobileTab === "inspector" ? "flex" : "hidden md:flex"}`}
+          <div className={`rounded-2xl p-3 overflow-hidden min-h-0 flex-col border flex-1 md:flex-none ${mobileTab === "inspector" ? "flex" : "hidden md:flex"}`}
             style={{ backgroundColor: "var(--surface)", borderColor: inspectorContext === "master" ? masterColor + "80" : "var(--border)" }}
             onClick={selectMaster}>
             <h3 className="text-center text-[11px] font-semibold mb-1" style={{ color: masterColor }}>MASTER</h3>

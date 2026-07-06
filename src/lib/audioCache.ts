@@ -9,7 +9,19 @@
  * Cache name: "nokashi-audio-v1" — bump the version string to invalidate all entries globally
  */
 
-const CACHE_NAME = "nokashi-audio-v1";
+const CACHE_NAME = "nokashi-audio-v2"; // v2 — absolute normalized keys, valid from any route
+
+// Cache API resolves string keys relative to the CURRENT page URL, so a raw
+// filePath cached on /projects/123/daw is invisible from /projects/123.
+// Normalizing to one absolute synthetic path makes hits work from every page.
+function cacheKey(filePath: string): string {
+  return `/__nokashi-audio/${encodeURIComponent(filePath)}`;
+}
+
+// One-time cleanup of the old route-relative cache
+if (typeof window !== "undefined" && typeof caches !== "undefined") {
+  caches.delete("nokashi-audio-v1").catch(() => {});
+}
 
 /**
  * Retrieve a cached audio blob by its Supabase file path.
@@ -19,7 +31,7 @@ export async function getCachedAudio(filePath: string): Promise<Blob | null> {
   if (typeof caches === "undefined") return null;
   try {
     const cache = await caches.open(CACHE_NAME);
-    const response = await cache.match(filePath);
+    const response = await cache.match(cacheKey(filePath));
     if (!response) return null;
     return await response.blob();
   } catch (err) {
@@ -36,7 +48,7 @@ export async function setCachedAudio(filePath: string, blob: Blob): Promise<void
   if (typeof caches === "undefined") return;
   try {
     const cache = await caches.open(CACHE_NAME);
-    await cache.put(filePath, new Response(blob, {
+    await cache.put(cacheKey(filePath), new Response(blob, {
       headers: { "Content-Type": blob.type || "audio/wav" }
     }));
     console.log(`[AudioCache] Stored: ${filePath} (${(blob.size / 1024 / 1024).toFixed(1)}MB)`);
@@ -55,7 +67,7 @@ export async function deleteCachedAudio(filePath: string): Promise<void> {
   if (typeof caches === "undefined") return;
   try {
     const cache = await caches.open(CACHE_NAME);
-    await cache.delete(filePath);
+    await cache.delete(cacheKey(filePath));
     console.log(`[AudioCache] Deleted: ${filePath}`);
   } catch (err) {
     console.warn("[AudioCache] Delete failed:", err);

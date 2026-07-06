@@ -141,20 +141,13 @@ export default function ProfilePage() {
     const stemBytes = (stemFiles ?? []).reduce((sum, f: any) => sum + (f.file_size ?? 0), 0);
     setStorageUsedBytes(mixBytes + stemBytes);
 
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
-    const { data: events, error: eventsErr } = await supabase
-      .from("usage_events")
-      .select("bytes_actual")
-      .eq("user_id", user.id)
-      .gte("created_at", startOfMonth.toISOString());
+    // Same server-side sum the budget gate uses — meter and gate can never disagree
+    const { data: egressSum, error: eventsErr } = await supabase.rpc("egress_used_this_month");
 
     if (eventsErr) {
       setEgressTrackingAvailable(false);
     } else {
-      setEgressUsedBytes((events ?? []).reduce((sum, e: any) => sum + (e.bytes_actual ?? 0), 0));
+      setEgressUsedBytes(Number(egressSum ?? 0));
     }
 
     checkUsageSlabsAndNotify();

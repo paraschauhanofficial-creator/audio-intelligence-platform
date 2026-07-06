@@ -75,19 +75,26 @@ export async function checkEgressBudget(): Promise<{
     .single();
 
   const planKey = planKeyFor(profile?.role, profile?.plan);
-  const budgetBytes = EGRESS_BUDGET[planKey];
+  const budgetBytes = EGRESS_BUDGET[planKey] ?? EGRESS_BUDGET.free; // unknown plan → never undefined → never permanently blocked
 
-  const startOfMonth = new Date();
-  startOfMonth.setDate(1);
-  startOfMonth.setHours(0, 0, 0, 0);
-
-  const { data: events } = await supabase
-    .from("usage_events")
-    .select("bytes_actual")
-    .eq("user_id", user.id)
-    .gte("created_at", startOfMonth.toISOString());
-
-  const usedBytes = (events ?? []).reduce((sum, e: any) => sum + (e.bytes_actual ?? 0), 0);
+  // Server-side sum — the old client-side reduce silently capped at 1000 rows
+  // (PostgREST default), undercounting exactly the heavy users the cap exists for.
+  let usedBytes = 0;
+  const { data: usedData, error: usedErr } = await supabase.rpc("egress_used_this_month");
+  if (!usedErr && usedData != null) {
+    usedBytes = Number(usedData);
+  } else {
+    // Fallback if the RPC isn't deployed yet (capped at 1000 rows)
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    const { data: events } = await supabase
+      .from("usage_events")
+      .select("bytes_actual")
+      .eq("user_id", user.id)
+      .gte("created_at", startOfMonth.toISOString());
+    usedBytes = (events ?? []).reduce((sum, e: any) => sum + (e.bytes_actual ?? 0), 0);
+  }
 
   return { allowed: usedBytes < budgetBytes, usedBytes, budgetBytes, plan: planKey };
 }
@@ -108,7 +115,7 @@ export async function checkStorageBudget(): Promise<{
     .single();
 
   const planKey = planKeyFor(profile?.role, profile?.plan);
-  const budgetBytes = STORAGE_BUDGET[planKey];
+  const budgetBytes = STORAGE_BUDGET[planKey] ?? STORAGE_BUDGET.free;
 
   const [{ data: mixFiles }, { data: stemFiles }] = await Promise.all([
     supabase.from("project_files").select("file_size").eq("user_id", user.id),
@@ -223,7 +230,7 @@ export async function notifyStorageBlocked(): Promise<void> {
   if (!user) return;
 
   await maybeNotify(
-    user.id, "storage_limit_90",
+    user.id, "storage_blocked",
     "Upload blocked — storage full",
     "You've used your full storage allowance. Delete older projects or upgrade your plan to keep uploading."
   );
