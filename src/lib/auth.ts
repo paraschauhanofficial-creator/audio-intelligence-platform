@@ -26,7 +26,7 @@ export async function signInWithGoogle() {
   return await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${window.location.origin}/auth/callback?next=/projects`,
+      redirectTo: `${window.location.origin}/projects`,
       queryParams: {
         access_type: "offline",
         prompt: "select_account", // always show the account picker
