@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { User, Sparkles, LogOut, ChevronDown, Shield, Bell, Settings, Sun, Moon, Menu, X, Trash2 } from "lucide-react";
+import { User, Sparkles, LogOut, ChevronDown, Shield, Bell, Settings, Sun, Moon, Menu, X, Trash2, HelpCircle, Rocket, BookOpen, Keyboard, LifeBuoy, Megaphone } from "lucide-react";
 import { notifyLoginSummary } from "@/lib/usageTracking";
 
 interface NotificationRow {
@@ -36,6 +36,9 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
+
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpRef = useRef<HTMLDivElement>(null);
 
   const [isDarkMode, setIsDarkMode] = useState(true);
 
@@ -139,6 +142,7 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setDropdownOpen(false);
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
       if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) setSettingsOpen(false);
+      if (helpRef.current && !helpRef.current.contains(e.target as Node)) setHelpOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -147,6 +151,15 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
   const navLinks = [
     { href: "/projects", label: "Home" },
     { href: "/projects/list", label: "My Projects" },
+  ];
+
+  const helpItems = [
+    { href: "/projects/help/getting-started", label: "Getting started", Icon: Rocket },
+    { href: "/projects/help/guide", label: "User guide", Icon: BookOpen },
+    { href: "/projects/help/faqs", label: "FAQs", Icon: HelpCircle },
+    { href: "/projects/help/shortcuts", label: "Keyboard shortcuts", Icon: Keyboard },
+    { href: "/projects/help/contact", label: "Contact support", Icon: LifeBuoy, divider: true },
+    { href: "/projects/help/whats-new", label: "What's new", Icon: Megaphone },
   ];
 
   const iconBtn = "flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-lg border transition-colors";
@@ -263,6 +276,38 @@ export default function Navbar({ accentColor = "#00B7FF" }: NavbarProps) {
                 >
                   View all
                 </button>
+              </div>
+            )}
+          </div>
+
+          {/* Help */}
+          <div className="relative" ref={helpRef}>
+            <button onClick={() => setHelpOpen(v => !v)}
+              className={iconBtn} style={{ borderColor: "var(--border)" }}
+              aria-label="Help and support">
+              <HelpCircle size={15} className="text-zinc-400" />
+            </button>
+
+            {helpOpen && (
+              <div className={`${dropdownBase} w-56`} style={dropdownStyle}>
+                <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+                  <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Help &amp; support</p>
+                </div>
+                {helpItems.map(({ href, label, Icon, divider }) => (
+                  <div key={href}>
+                    {divider && <div style={{ borderTop: "1px solid var(--border)" }} />}
+                    <button
+                      onClick={() => { setHelpOpen(false); router.push(href); }}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors"
+                      style={{ color: "var(--text)" }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(128,128,128,0.1)"}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                    >
+                      <Icon size={15} style={{ color: "var(--text-muted)" }} />
+                      {label}
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
