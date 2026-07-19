@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { fetchAndLogAudio, checkEgressBudget, notifyEgressBlocked } from "@/lib/usageTracking";
+import { fetchAndLogAudio, checkEgressBudget, checkUsageSlabsAndNotify, notifyEgressBlocked } from "@/lib/usageTracking";
 import { getCachedAudio, setCachedAudio } from "@/lib/audioCache";
 import { analyzeStem, type StemAnalysisProgress } from "@/intelligence/stems/stemsAnalyzer";
 import { SECTION_LABELS, SLOT_LABELS, type StemSection } from "@/intelligence/stems/stemsIdentifier";
@@ -194,7 +194,7 @@ export default function StemsProjectPage() {
           console.log("[AudioCache] Analysis hit:", stem.file_path);
         } else {
           blob = await fetchAndLogAudio(url, "daw_stem_load", projectId);
-          setCachedAudio(stem.file_path, blob);
+          await setCachedAudio(stem.file_path, blob);
         }
         const file = new File([blob], stem.original_name, { type: blob.type });
 
@@ -265,6 +265,7 @@ export default function StemsProjectPage() {
 
     setAnalysisRunning(false);
     setAnalysisComplete(true);
+    checkUsageSlabsAndNotify(); // fire-and-forget — batch may have fetched multiple large files
 
     // ── AUTO-MIX after analysis ───────────────────────────────────────────
     const { data: freshStems } = await supabase
@@ -317,7 +318,7 @@ export default function StemsProjectPage() {
             console.log("[AudioCache] AutoMix hit:", stem.file_path);
           } else {
             blob = await fetchAndLogAudio(url, "daw_stem_load", projectId);
-            setCachedAudio(stem.file_path, blob);
+            await setCachedAudio(stem.file_path, blob);
           }
           const arrayBuffer  = await blob.arrayBuffer();
           const buffer       = await audioCtx.decodeAudioData(arrayBuffer);

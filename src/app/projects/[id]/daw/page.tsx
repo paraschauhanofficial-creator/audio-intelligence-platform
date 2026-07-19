@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { fetchAndLogAudio, checkEgressBudget, checkUsageSlabsAndNotify, notifyEgressBlocked } from "@/lib/usageTracking";
@@ -44,7 +44,7 @@ interface TrackRecord {
 export default function DAWPage() {
   const router = useRouter();
   const params = useParams();
-  const ENABLE_DAW_AUDIO = false; // set to true after July 11th billing reset
+  const ENABLE_DAW_AUDIO = true; // flipped July 19 — egress billing reset
 
   const [project,        setProject]        = useState<any>(null);
   const [tracks,         setTracks]         = useState<TrackRecord[]>([]);
@@ -96,7 +96,7 @@ export default function DAWPage() {
   const [selectedTrack,    setSelectedTrack]    = useState("");
   const [expandedView,     setExpandedView]     = useState<"none"|"timeline"|"mixer">("none");
   const [trackHeaderWidth, setTrackHeaderWidth] = useState(180);
-  const [trackHeight,      setTrackHeight]      = useState(96);
+  const trackHeight = 64; // fixed — resize removed; redrawing waveforms per-drag was wasteful churn
 
   // Playback
   const [isPlaying,   setIsPlaying]   = useState(false);
@@ -111,6 +111,9 @@ export default function DAWPage() {
   const stemSourcesRef     = useRef<Record<string, AudioBufferSourceNode>>({});
   const stemBuffersRef     = useRef<Record<string, AudioBuffer>>({});
   const stemGainNodesRef   = useRef<Record<string, GainNode>>({});
+  const stemAnalysersRef   = useRef<Record<string, AnalyserNode>>({});
+  const stemLevelsRef      = useRef<Record<string, number>>({});
+  const [stemLevels, setStemLevels] = useState<Record<string, number>>({});
   const masterInputGainRef = useRef<GainNode | null>(null);
   const lowShelfNodeRef    = useRef<BiquadFilterNode | null>(null);
   const highShelfNodeRef   = useRef<BiquadFilterNode | null>(null);
@@ -125,7 +128,7 @@ export default function DAWPage() {
   const pauseOffsetRef    = useRef(0);
   const animFrameRef      = useRef<number>(0);
   const isDragging        = useRef(false);
-  const isResizingHeight  = useRef(false);
+  
   const waveformRefs      = useRef<Record<string, HTMLDivElement | null>>({});
   const wavesurferRefs    = useRef<Record<string, any>>({});
   const blobUrlCacheRef   = useRef<Record<string, string>>({});
@@ -160,7 +163,12 @@ export default function DAWPage() {
     if (error || !proj) return;
     setProject(proj);
 
-    const isStems = proj.workflow === "stems";
+    // Match all stems workflow variants — older projects use ai_assisted_stems /
+    // producer_mode_stems, not "stems", so they were loading from project_files (empty)
+    const isStems =
+      proj.workflow === "stems" ||
+      proj.workflow === "ai_assisted_stems" ||
+      proj.workflow === "producer_mode_stems";
     setIsStemsProject(isStems);
 
     if (proj.master_input_gain      != null) setInputGain(proj.master_input_gain);
@@ -276,13 +284,7 @@ export default function DAWPage() {
     }
   }, [audioUrls, tracks]);
 
-  useEffect(() => {
-    if (!ENABLE_DAW_AUDIO) return;
-    if (!Object.keys(audioUrls).length || !tracks.length) return;
-    if (Object.keys(wavesurferRefs.current).length === 0) return;
-    const t = setTimeout(() => redrawWaveformHeights(), 150);
-    return () => clearTimeout(t);
-  }, [trackHeight]);
+  // trackHeight is now fixed — no resize, no redraw effect needed
 
   // ─────────────────────────────────────────────────────────────────────────
   // MASTER CHAIN BUILDER
@@ -380,7 +382,14 @@ export default function DAWPage() {
         stemGain.gain.value = Math.pow(10, (trackVolumes[track.name] ?? 0) / 20);
         stemGainNodesRef.current[track.name] = stemGain;
 
-        stemGain.connect(masterIn);
+        // Per-stem analyser — post-fader tap so the meter reflects mute/solo/volume.
+        // Sits in-line (gain → analyser → master); AnalyserNode passes audio through untouched.
+        const stemAnalyser = ctx.createAnalyser();
+        stemAnalyser.fftSize = 256;
+        stemAnalysersRef.current[track.name] = stemAnalyser;
+
+        stemGain.connect(stemAnalyser);
+        stemAnalyser.connect(masterIn);
 
       } catch (err) {
         console.error(`Failed to load stem: ${track.name}`, err);
@@ -541,8 +550,29 @@ export default function DAWPage() {
     if (!analyser) return;
     const data = new Uint8Array(analyser.frequencyBinCount);
     const tick = () => {
-      analyser.getByteFrequencyData(data);
-      setVuLevel(Math.min(100, (data.reduce((s, v) => s + v, 0) / data.length / 128) * 100));
+      // Every read individually guarded — one bad analyser (stale build,
+      // closed context) must never kill the whole rAF loop.
+      try {
+        analyser.getByteFrequencyData(data);
+        setVuLevel(Math.min(100, (data.reduce((s, v) => s + v, 0) / data.length / 128) * 100));
+      } catch (e) { /* master analyser stale — playhead below still runs */ }
+
+      // Per-stem levels — buffer sized per analyser, bad ones dropped from the ref
+      const levels: Record<string, number> = {};
+      for (const [name, an] of Object.entries(stemAnalysersRef.current)) {
+        try {
+          const buf = new Uint8Array(an.frequencyBinCount);
+          an.getByteFrequencyData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) sum += buf[i];
+          levels[name] = Math.min(100, (sum / buf.length / 128) * 100);
+        } catch (e) {
+          delete stemAnalysersRef.current[name]; // stale node — evict, keep looping
+          levels[name] = 0;
+        }
+      }
+      stemLevelsRef.current = levels;
+      setStemLevels(levels);
       if (audioCtxRef.current) {
         const elapsed = audioCtxRef.current.currentTime - startTimeRef.current + pauseOffsetRef.current;
         const pct = Math.min(1, elapsed / durationSeconds.current);
@@ -559,6 +589,24 @@ export default function DAWPage() {
   const startPlayback = () => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
+
+    // Self-heal: context was closed (Fast Refresh cleanup, stale build) —
+    // rebuild the graph from cached blobs (zero egress) and retry once ready.
+    if (ctx.state === "closed") {
+      if (isStemsProject) {
+        buildStemsAudioGraph().then(() => {
+          if (audioCtxRef.current && audioCtxRef.current.state !== "closed") startPlayback();
+        });
+      } else if (audioBufferRef.current) {
+        buildMixAudioGraph(audioBufferRef.current);
+        startPlayback();
+      }
+      return;
+    }
+
+    // Chrome suspends AudioContexts created outside a user gesture —
+    // this click IS the gesture, so resume before starting sources.
+    if (ctx.state === "suspended") ctx.resume();
 
     if (isStemsProject) {
       for (const track of tracks) {
@@ -751,13 +799,7 @@ export default function DAWPage() {
     const onUp   = () => { isDragging.current = false; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
     window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
   };
-  const startHeightResize = (e: React.MouseEvent) => {
-    e.stopPropagation(); isResizingHeight.current = true;
-    const sy = e.clientY; const sh = trackHeight;
-    const onMove = (e: MouseEvent) => { if (!isResizingHeight.current) return; setTrackHeight(Math.max(40, Math.min(160, sh + (e.clientY - sy)))); };
-    const onUp   = () => { isResizingHeight.current = false; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
-  };
+  
 
   // ─────────────────────────────────────────────────────────────────────────
   // EXPORT
@@ -954,7 +996,7 @@ export default function DAWPage() {
         style={{ width: CH_WIDTH_SM, borderColor: isActive ? col : "var(--border)", backgroundColor: isActive ? col + "08" : "transparent" }}>
         <div className="flex-1 w-2 rounded-full relative mb-2 min-h-0" style={{ minHeight: 60, backgroundColor: "var(--border)" }}>
           <div className="absolute bottom-0 left-0 right-0 rounded-full"
-            style={{ height: `${isPlaying ? vuLevel : 60}%`, backgroundColor: col, transition: "height 0.05s" }}/>
+            style={{ height: `${isPlaying ? (stemLevels[track.name] ?? 0) : 0}%`, backgroundColor: col, transition: "height 0.05s" }}/>
         </div>
         <span className="text-[10px] truncate w-full text-center flex-shrink-0" style={{ color: "var(--text-muted)" }}>{track.name.slice(0, 6)}</span>
       </button>
@@ -967,7 +1009,8 @@ export default function DAWPage() {
     const isSolo   = soloTrack === track.name;
     const vol      = trackVolumes[track.name] ?? 0;
     const col      = sectionColors[track.section] ?? trackColor;
-    const vuColor  = vuLevel > 85 ? "#EF4444" : vuLevel > 60 ? masterColor : col;
+    const myLevel  = stemLevels[track.name] ?? 0;
+    const vuColor  = myLevel > 85 ? "#EF4444" : myLevel > 60 ? masterColor : col;
     return (
       <div onClick={() => selectTrack(track.name)}
         className="flex-shrink-0 rounded-xl border flex flex-col items-center pt-2 pb-2 px-2 gap-0 cursor-pointer transition"
@@ -983,7 +1026,7 @@ export default function DAWPage() {
             className="w-6 h-5 rounded text-[9px] font-bold border transition"
             style={isSolo ? { borderColor: "#14D8C4", backgroundColor: "#14D8C420", color: "#14D8C4" } : { borderColor: "var(--border)", color: "var(--text-muted)" }}>S</button>
         </div>
-        <VUBar level={isPlaying ? vuLevel : 0} color={vuColor}/>
+        <VUBar level={isPlaying ? myLevel : 0} color={vuColor}/>
         <div className="w-full my-2" style={{ borderTop: "1px solid var(--border)" }}/>
         <VerticalFader value={vol} color={col}
           onClick={e => e.stopPropagation()}
@@ -1003,7 +1046,7 @@ export default function DAWPage() {
       style={{ width: CH_WIDTH_SM, borderColor: inspectorContext === "master" ? masterColor : "#F0A50040", backgroundColor: inspectorContext === "master" ? "#F0A50015" : "transparent" }}>
       <div className="flex-1 w-2 rounded-full relative mb-2 min-h-0" style={{ minHeight: 60, backgroundColor: "var(--border)" }}>
         <div className="absolute bottom-0 left-0 right-0 rounded-full"
-          style={{ height: `${isPlaying ? Math.min(100, vuLevel * 0.9) : 60}%`, backgroundColor: masterColor, transition: "height 0.05s" }}/>
+          style={{ height: `${isPlaying ? Math.min(100, vuLevel * 0.9) : 0}%`, backgroundColor: masterColor, transition: "height 0.05s" }}/>
       </div>
       <span className="text-[10px] flex-shrink-0" style={{ color: masterColor }}>MST</span>
     </button>
@@ -1275,8 +1318,7 @@ export default function DAWPage() {
                             </div>
                           )}
                         </div>
-                        <div onMouseDown={startHeightResize} className="absolute bottom-0 left-0 right-0 h-1 cursor-row-resize opacity-0 hover:opacity-60 transition z-20"
-                          style={{ backgroundColor: trackColor }}/>
+                        
                       </div>
                     );
                   })}
@@ -1324,12 +1366,18 @@ export default function DAWPage() {
                       </span>
                     </div>
                     <div className="flex gap-2 px-3 py-2 items-stretch" style={{ height: 140 }}>
-                      {tracks.map(track => isExpandedMixer
-                        ? <MixerChannelExpanded key={track.id} track={track}/>
-                        : <MixerChannelCompact  key={track.id} track={track}/>
-                      )}
+                      {/* Called as functions, not <JSX/> — components defined inside DAWPage
+                          get a new identity every render, so React remounts them ~60fps during
+                          playback (vuLevel rAF loop) and clicks on M/S never land. Function
+                          calls inline the JSX: no remount, buttons work. Timeline M/S was
+                          unaffected because it's already inline. */}
+                      {tracks.map(track => (
+                        <Fragment key={track.id}>
+                          {isExpandedMixer ? MixerChannelExpanded({ track }) : MixerChannelCompact({ track })}
+                        </Fragment>
+                      ))}
                       <div className="w-px self-stretch mx-1" style={{ backgroundColor: "var(--border)" }}/>
-                      {isExpandedMixer ? <MasterChannelExpanded/> : <MasterChannelCompact/>}
+                      {isExpandedMixer ? MasterChannelExpanded() : MasterChannelCompact()}
                     </div>
                   </div>
 
@@ -1340,10 +1388,11 @@ export default function DAWPage() {
                         <span className="text-[8px] border px-1 rounded" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>Stems required</span>
                       </div>
                       <div className="flex gap-2 px-3 py-2 items-stretch">
-                        {sec.slots.map(slot => isExpandedMixer
-                          ? <StemSlotExpanded key={slot} label={slot}/>
-                          : <StemSlotCompact  key={slot} label={slot}/>
-                        )}
+                        {sec.slots.map(slot => (
+                          <Fragment key={slot}>
+                            {isExpandedMixer ? StemSlotExpanded({ label: slot }) : StemSlotCompact({ label: slot })}
+                          </Fragment>
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -1362,7 +1411,7 @@ export default function DAWPage() {
                                 <div style={{ height: 28 }}/>
                                 <div className="flex gap-1 items-stretch flex-shrink-0" style={{ height: VU_HEIGHT }}>
                                   <div className="w-3 rounded-full relative overflow-hidden border" style={{ backgroundColor: "var(--background)", borderColor: "var(--border)" }}>
-                                    <div className="absolute bottom-0 left-0 right-0 rounded-full bg-[#FF6B4A]" style={{ height: "50%" }}/>
+                                    <div className="absolute bottom-0 left-0 right-0 rounded-full bg-[#FF6B4A]" style={{ height: "0%" }}/>
                                   </div>
                                 </div>
                                 <div className="w-full my-2" style={{ borderTop: "1px solid var(--border)" }}/>

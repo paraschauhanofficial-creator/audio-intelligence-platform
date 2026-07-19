@@ -19,7 +19,7 @@ import { getCachedAudio, setCachedAudio } from "@/lib/audioCache";
 export default function ProjectPage() {
   const params = useParams();
   const router = useRouter();
-  const ENABLE_WAVEFORMS = false; // set to true after July 11th billing reset
+  const ENABLE_WAVEFORMS = true; // flipped July 19 — egress billing reset
 
   const [project, setProject] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
@@ -128,9 +128,21 @@ const masterAudioBlobRef = useRef<string>("");
           return;
         }
 
-        // Fetch the file as a File object
-        const response = await fetch(data.signedUrl);
-        const blob = await response.blob();
+        // Cache-first — zero egress if hit; logged + budget-gated if not
+        let blob = await getCachedAudio(files[0].file_path);
+        if (blob) {
+          console.log("[AudioCache] Analysis trigger hit:", files[0].file_path);
+        } else {
+          const budgetCheck = await checkEgressBudget();
+          if (!budgetCheck.allowed) {
+            setEgressBlocked(true);
+            notifyEgressBlocked();
+            return;
+          }
+          blob = await fetchAndLogAudio(data.signedUrl, "waveform_load", project.id);
+          await setCachedAudio(files[0].file_path, blob);
+          checkUsageSlabsAndNotify();
+        }
         const file = new File([blob], files[0].file_name, {
           type: files[0].file_type,
         });
@@ -516,10 +528,17 @@ wavesurferRef.current.on(
 
 
     try {
-  const blob = await fetchAndLogAudio(data.signedUrl, "waveform_load", project?.id);
+  // Cache-first — zero egress if hit
+  let blob = await getCachedAudio(file.file_path);
+  if (blob) {
+    console.log("[AudioCache] Waveform hit:", file.file_path);
+  } else {
+    blob = await fetchAndLogAudio(data.signedUrl, "waveform_load", project?.id);
+    await setCachedAudio(file.file_path, blob);
+    checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
+  }
   const blobUrl = URL.createObjectURL(blob);
   await wavesurferRef.current.load(blobUrl);
-  checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
 } catch (err: any) {
   if (err?.name !== "AbortError") {
     console.error(err);
@@ -588,10 +607,17 @@ wavesurferRef.current.on(
     masterWavesurferRef.current.on("pause", () => setMasterPlaying(false));
 
     try {
-      const blob = await fetchAndLogAudio(data.signedUrl, "master_waveform_load", project?.id);
+      // Cache-first — zero egress if hit
+      let blob = await getCachedAudio(project.master_file_path);
+      if (blob) {
+        console.log("[AudioCache] Master waveform hit:", project.master_file_path);
+      } else {
+        blob = await fetchAndLogAudio(data.signedUrl, "master_waveform_load", project?.id);
+        await setCachedAudio(project.master_file_path, blob);
+        checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
+      }
       const blobUrl = URL.createObjectURL(blob);
       await masterWavesurferRef.current.load(blobUrl);
-      checkUsageSlabsAndNotify(); // fire-and-forget, checks slabs right after real usage happens
     } catch (err: any) {
       if (err?.name !== "AbortError") {
         console.error(err);
